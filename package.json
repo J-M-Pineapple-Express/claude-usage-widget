@@ -1,0 +1,63 @@
+{
+  "name": "claude-usage-widget",
+  "version": "0.2.0",
+  "description": "Tiny always-on-top widget that shows your Claude 5-hour and weekly usage, extra-usage spend, and prepaid balance.",
+  "author": "AfterRealm",
+  "license": "MIT",
+  "homepage": "https://github.com/AfterRealm/claude-usage-widget",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/AfterRealm/claude-usage-widget.git"
+  },
+  "bugs": {
+    "url": "https://github.com/AfterRealm/claude-usage-widget/issues"
+  },
+  "main": "electron-main.js",
+  "scripts": {
+    "start": "electron .",
+    "dist": "electron-builder",
+    "dist:win": "electron-builder --win --x64",
+    "dist:mac": "electron-builder --mac --x64 --arm64"
+  },
+  "devDependencies": {
+    "electron": "^33.0.0",
+    "electron-builder": "^25.1.8"
+  },
+  "build": {
+    "appId": "com.afterrealm.claudeusagewidget",
+    "productName": "Claude Usage",
+    "directories": { "output": "dist" },
+    "files": [
+      "electron-main.js",
+      "preload.js",
+      "scraper-preload.js",
+      "public/**/*",
+      "package.json"
+    ],
+    "asar": true,
+    "win": {
+      "target": "nsis",
+      "artifactName": "ClaudeUsage-Setup-${version}.${ext}"
+    },
+    "nsis": {
+      "oneClick": false,
+      "perMachine": false,
+      "allowToChangeInstallationDirectory": true,
+      "createDesktopShortcut": true,
+      "createStartMenuShortcut": true,
+      "shortcutName": "Claude Usage"
+    },
+    "mac": {
+      "target": [
+        { "target": "dmg", "arch": ["x64", "arm64"] },
+        { "target": "zip", "arch": ["x64", "arm64"] }
+      ],
+      "category": "public.app-category.productivity",
+      "artifactName": "ClaudeUsage-${version}-${arch}.${ext}",
+      "identity": null
+    },
+    "dmg": {
+      "title": "Claude Usage ${version}"
+    }
+  }
+}
