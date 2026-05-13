@@ -65,4 +65,5 @@ html, body {
 .extra-label { opacity: 0.6; }
 .extra-val { font-variant-numeric: tabular-nums; opacity: 0.9; }
 .status { font-size: 10px; opacity: 0.5; margin-top: 8px; text-align: center; }
+.version { font-size: 9px; opacity: 0.3; text-align: center; margin-top: 2px; font-variant-numeric: tabular-nums; }
 .status.err { color: #ff8a7a; opacity: 0.85; }

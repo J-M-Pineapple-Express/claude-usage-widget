@@ -2,11 +2,24 @@ const { app, BrowserWindow, ipcMain, session, Menu, Tray, nativeImage } = requir
 const path = require('path');
 const fs = require('fs');
 
+const DEBUG = process.env.CLAUDE_USAGE_DEBUG === '1';
+const APP_VERSION = require('./package.json').version;
+
 const userData = app.getPath('userData');
 const logFile = path.join(userData, 'startup.log');
+const MAX_LOG_BYTES = 1_000_000;
+
 function log(msg) {
-  try { fs.appendFileSync(logFile, `[${new Date().toISOString()}] ${msg}\n`); } catch {}
+  try {
+    const line = `[${new Date().toISOString()}] ${msg}\n`;
+    if (fs.existsSync(logFile) && fs.statSync(logFile).size > MAX_LOG_BYTES) {
+      fs.writeFileSync(logFile, line);
+    } else {
+      fs.appendFileSync(logFile, line);
+    }
+  } catch {}
 }
+
 process.on('uncaughtException', (e) => log(`UNCAUGHT: ${e.stack || e.message}`));
 process.on('unhandledRejection', (r) => log(`UNHANDLED: ${r?.stack || r}`));
 
@@ -17,7 +30,7 @@ const POLL_MS = 60 * 1000;
 
 let widgetWin = null;
 let loginWin = null;
-let scraperWin = null;
+let loginHandled = false;
 let tray = null;
 let pollTimer = null;
 let lastData = null;
@@ -28,19 +41,22 @@ function widgetSession() {
 
 async function hasAuth() {
   const cookies = await widgetSession().cookies.get({ url: 'https://claude.ai' });
-  const names = cookies.map(c => c.name);
-  log(`cookies on claude.ai: ${names.join(', ')}`);
-  return cookies.some(c => /session|auth|__Secure|lastActiveOrg/i.test(c.name));
+  return cookies.some(c => c.name === 'sessionKey' || c.name === 'sessionKeyLC');
 }
 
 function createWidget() {
+  if (widgetWin && !widgetWin.isDestroyed()) {
+    if (widgetWin.isMinimized()) widgetWin.restore();
+    widgetWin.show();
+    widgetWin.focus();
+    return;
+  }
   widgetWin = new BrowserWindow({
     width: 300,
     height: 260,
     frame: false,
     transparent: true,
     resizable: false,
-    alwaysOnTop: true,
     skipTaskbar: false,
     title: 'Claude Usage',
     webPreferences: {
@@ -56,6 +72,7 @@ function createWidget() {
 }
 
 function createLogin() {
+  loginHandled = false;
   loginWin = new BrowserWindow({
     width: 520,
     height: 720,
@@ -68,12 +85,13 @@ function createLogin() {
   });
   loginWin.loadURL(LOGIN_URL);
   const onNav = async (_e, url) => {
+    if (loginHandled) return;
     log(`login nav: ${url}`);
     if (!/claude\.ai/.test(url)) return;
     if (/\/(login|auth|signin|sign-in|magic-link)/i.test(url)) return;
     const ok = await hasAuth();
-    log(`hasAuth=${ok} on ${url}`);
-    if (ok) {
+    if (ok && !loginHandled) {
+      loginHandled = true;
       log('login cookies captured — closing login window');
       try { loginWin && loginWin.close(); } catch {}
       loginWin = null;
@@ -83,29 +101,13 @@ function createLogin() {
   };
   loginWin.webContents.on('did-navigate', onNav);
   loginWin.webContents.on('did-navigate-in-page', onNav);
-  loginWin.webContents.on('did-finish-load', () => onNav(null, loginWin.webContents.getURL()));
+  loginWin.webContents.on('did-finish-load', () => {
+    if (loginWin && !loginWin.isDestroyed()) onNav(null, loginWin.webContents.getURL());
+  });
   loginWin.on('closed', () => {
     loginWin = null;
     if (!widgetWin) app.quit();
   });
-}
-
-function ensureScraper() {
-  if (scraperWin && !scraperWin.isDestroyed()) return scraperWin;
-  scraperWin = new BrowserWindow({
-    show: false,
-    width: 1200,
-    height: 900,
-    webPreferences: {
-      preload: path.join(__dirname, 'scraper-preload.js'),
-      contextIsolation: true,
-      nodeIntegration: false,
-      session: widgetSession(),
-      offscreen: false,
-    },
-  });
-  scraperWin.on('closed', () => { scraperWin = null; });
-  return scraperWin;
 }
 
 const SCRAPE_JS = `(() => {
@@ -121,9 +123,7 @@ const SCRAPE_JS = `(() => {
       reset: resetMatch ? resetMatch[1].trim() : null,
     };
   }
-  // 5-hour = block right after "Current session"
   const fiveHour = extractAfter(/Current session/i, { window: 200 });
-  // Weekly all-models = block right after "All models" (under "Weekly limits")
   const weeklyIdx = body.search(/Weekly limits/i);
   let weekly = null;
   if (weeklyIdx >= 0) {
@@ -139,15 +139,14 @@ const SCRAPE_JS = `(() => {
       };
     }
   }
-  // Extra usage section
   let extra = null;
   const extraIdx = body.search(/Extra usage/i);
   if (extraIdx >= 0) {
     const chunk = body.slice(extraIdx, extraIdx + 600);
-    const spent = chunk.match(/\\$([\\d,]+\\.\\d{2})\\s*spent/i);
+    const spent = chunk.match(/\\$([\\d,]+(?:\\.\\d{2})?)\\s*spent/i);
     const reset = chunk.match(/Resets?\\s+([^\\n]{1,40})/i);
     const limit = chunk.match(/\\$([\\d,]+(?:\\.\\d{2})?)\\s*\\|?\\s*Monthly spend limit/i);
-    const balance = chunk.match(/\\$([\\d,]+\\.\\d{2})\\s*\\|?\\s*Current balance/i);
+    const balance = chunk.match(/\\$([\\d,]+(?:\\.\\d{2})?)\\s*\\|?\\s*Current balance/i);
     extra = {
       spent: spent ? spent[1] : null,
       limit: limit ? limit[1] : null,
@@ -155,34 +154,64 @@ const SCRAPE_JS = `(() => {
       reset: reset ? reset[1].trim() : null,
     };
   }
-  return {
-    fiveHour, weekly, extra,
-    url: location.href,
-    title: document.title,
-    bodyDump: body.slice(0, 1500),
-  };
+  return { fiveHour, weekly, extra, url: location.href, title: document.title };
 })();`;
 
+async function waitForText(win, pattern, timeoutMs = 12000) {
+  const start = Date.now();
+  while (Date.now() - start < timeoutMs) {
+    if (win.isDestroyed()) return false;
+    try {
+      const found = await win.webContents.executeJavaScript(
+        `!!document.body && /${pattern}/i.test(document.body.innerText)`
+      );
+      if (found) return true;
+    } catch {}
+    await new Promise(r => setTimeout(r, 250));
+  }
+  return false;
+}
+
 async function pollOnce() {
+  let scraperWin = null;
   try {
-    const win = ensureScraper();
-    await win.loadURL(USAGE_URL);
-    await new Promise(r => setTimeout(r, 4000));
-    const data = await win.webContents.executeJavaScript(SCRAPE_JS);
-    log(`scrape url=${data && data.url} title=${data && data.title}`);
-    if (data && data.bodyDump) log(`body dump: ${data.bodyDump.replace(/\n/g, ' | ')}`);
+    scraperWin = new BrowserWindow({
+      show: false,
+      width: 800,
+      height: 600,
+      webPreferences: {
+        contextIsolation: true,
+        nodeIntegration: false,
+        session: widgetSession(),
+      },
+    });
+    await scraperWin.loadURL(USAGE_URL);
+    const ready = await waitForText(scraperWin, 'Current session|Weekly limits');
+    if (!ready) {
+      log('poll: timed out waiting for usage page to render');
+      if (widgetWin && !widgetWin.isDestroyed()) {
+        widgetWin.webContents.send('usage:error', 'Page did not render');
+      }
+      return;
+    }
+    const data = await scraperWin.webContents.executeJavaScript(SCRAPE_JS);
     const haveData = data && ((data.fiveHour && data.fiveHour.percent != null) || (data.weekly && data.weekly.percent != null));
     if (haveData) {
       lastData = { ...data, at: Date.now() };
       log(`poll ok: 5h=${data.fiveHour?.percent} weekly=${data.weekly?.percent}`);
       if (widgetWin && !widgetWin.isDestroyed()) widgetWin.webContents.send('usage:update', lastData);
     } else {
-      log(`poll empty: ${JSON.stringify(data)}`);
+      log(`poll empty (data shape: 5h=${!!data?.fiveHour} wk=${!!data?.weekly} ex=${!!data?.extra})`);
+      if (DEBUG && data) log(`DEBUG body: ${(data.bodyDump || '').slice(0, 800)}`);
       if (widgetWin && !widgetWin.isDestroyed()) widgetWin.webContents.send('usage:error', 'Could not read usage page');
     }
   } catch (e) {
     log(`poll error: ${e.stack || e.message}`);
     if (widgetWin && !widgetWin.isDestroyed()) widgetWin.webContents.send('usage:error', e.message);
+  } finally {
+    if (scraperWin && !scraperWin.isDestroyed()) {
+      try { scraperWin.destroy(); } catch {}
+    }
   }
 }
 
@@ -194,30 +223,41 @@ function startPolling() {
 
 function createTray() {
   try {
-    const icon = nativeImage.createEmpty();
+    const iconName = process.platform === 'darwin' ? 'trayTemplate.png' : 'tray.png';
+    const iconPath = path.join(__dirname, 'public', iconName);
+    const icon = nativeImage.createFromPath(iconPath);
+    if (process.platform === 'darwin') icon.setTemplateImage(true);
     tray = new Tray(icon);
-    tray.setToolTip('Claude Usage');
+    tray.setToolTip(`Claude Usage v${APP_VERSION}`);
     const menu = Menu.buildFromTemplate([
-      { label: 'Show widget', click: () => { if (widgetWin) widgetWin.show(); else createWidget(); } },
+      { label: `Claude Usage v${APP_VERSION}`, enabled: false },
+      { type: 'separator' },
+      { label: 'Show widget', click: () => createWidget() },
       { label: 'Refresh now', click: () => pollOnce() },
       { label: 'Sign out / switch account', click: async () => {
+          if (pollTimer) { clearInterval(pollTimer); pollTimer = null; }
           await widgetSession().clearStorageData();
-          if (widgetWin) widgetWin.close();
+          if (widgetWin && !widgetWin.isDestroyed()) widgetWin.close();
           createLogin();
         } },
       { type: 'separator' },
       { label: 'Quit', click: () => { app.quit(); } },
     ]);
     tray.setContextMenu(menu);
+    if (process.platform !== 'darwin') {
+      tray.on('click', () => createWidget());
+    }
   } catch (e) { log(`tray failed: ${e.message}`); }
 }
 
 ipcMain.handle('usage:get', () => lastData);
+ipcMain.handle('app:version', () => APP_VERSION);
 ipcMain.on('widget:close', () => app.quit());
 ipcMain.on('widget:refresh', () => pollOnce());
 
 app.whenReady().then(async () => {
-  log('app ready');
+  log(`app ready — v${APP_VERSION}`);
+  if (process.platform === 'darwin' && app.dock) app.dock.hide();
   createTray();
   const authed = await hasAuth();
   if (authed) {
@@ -229,5 +269,9 @@ app.whenReady().then(async () => {
 });
 
 app.on('window-all-closed', (e) => {
-  e.preventDefault();
+  if (tray && !tray.isDestroyed && !tray.isDestroyed()) {
+    e.preventDefault();
+    return;
+  }
+  if (process.platform !== 'darwin') app.quit();
 });

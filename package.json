@@ -1,6 +1,6 @@
 {
   "name": "claude-usage-widget",
-  "version": "0.2.0",
+  "version": "0.3.0",
   "description": "Tiny always-on-top widget that shows your Claude 5-hour and weekly usage, extra-usage spend, and prepaid balance.",
   "author": "AfterRealm",
   "license": "MIT",
@@ -30,7 +30,6 @@
     "files": [
       "electron-main.js",
       "preload.js",
-      "scraper-preload.js",
       "public/**/*",
       "package.json"
     ],
@@ -54,7 +53,10 @@
       ],
       "category": "public.app-category.productivity",
       "artifactName": "ClaudeUsage-${version}-${arch}.${ext}",
-      "identity": null
+      "identity": null,
+      "extendInfo": {
+        "LSUIElement": true
+      }
     },
     "dmg": {
       "title": "Claude Usage ${version}"

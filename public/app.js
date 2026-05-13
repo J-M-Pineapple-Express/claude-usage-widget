@@ -34,6 +34,7 @@ function showError(msg) {
 window.usage.onUpdate(render);
 window.usage.onError(showError);
 window.usage.get().then((d) => d && render(d));
+window.usage.version().then((v) => { if (v) $('version').textContent = 'v' + v; });
 
 $('refresh').addEventListener('click', () => {
   $('status').textContent = 'Refreshing…';
