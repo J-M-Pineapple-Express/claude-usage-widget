@@ -41,3 +41,7 @@ $('refresh').addEventListener('click', () => {
   window.usage.refresh();
 });
 $('close').addEventListener('click', () => window.usage.close());
+
+window.usage.accentColor().then((color) => {
+  if (color) $('card').style.borderColor = color;
+});

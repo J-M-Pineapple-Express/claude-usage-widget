@@ -1,4 +1,4 @@
-const { app, BrowserWindow, ipcMain, session, Menu, Tray, nativeImage } = require('electron');
+const { app, BrowserWindow, ipcMain, session, Menu, Tray, nativeImage, systemPreferences } = require('electron');
 const path = require('path');
 const fs = require('fs');
 
@@ -252,6 +252,13 @@ function createTray() {
 
 ipcMain.handle('usage:get', () => lastData);
 ipcMain.handle('app:version', () => APP_VERSION);
+ipcMain.handle('theme:accentColor', () => {
+  if (process.platform !== 'win32') return null;
+  try {
+    const rgba = systemPreferences.getAccentColor(); // 8-char RGBA hex, e.g. 'cce0ffff'
+    return '#' + rgba.slice(0, 6);
+  } catch { return null; }
+});
 ipcMain.on('widget:close', () => app.quit());
 ipcMain.on('widget:refresh', () => pollOnce());
 

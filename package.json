@@ -20,13 +20,15 @@
     "dist:mac": "electron-builder --mac --x64 --arm64"
   },
   "devDependencies": {
-    "electron": "^33.0.0",
-    "electron-builder": "^25.1.8"
+    "electron": "^42.2.0",
+    "electron-builder": "^26.8.1"
   },
   "build": {
     "appId": "com.afterrealm.claudeusagewidget",
     "productName": "Claude Usage",
-    "directories": { "output": "dist" },
+    "directories": {
+      "output": "dist"
+    },
     "files": [
       "electron-main.js",
       "preload.js",
@@ -48,8 +50,20 @@
     },
     "mac": {
       "target": [
-        { "target": "dmg", "arch": ["x64", "arm64"] },
-        { "target": "zip", "arch": ["x64", "arm64"] }
+        {
+          "target": "dmg",
+          "arch": [
+            "x64",
+            "arm64"
+          ]
+        },
+        {
+          "target": "zip",
+          "arch": [
+            "x64",
+            "arm64"
+          ]
+        }
       ],
       "category": "public.app-category.productivity",
       "artifactName": "ClaudeUsage-${version}-${arch}.${ext}",
