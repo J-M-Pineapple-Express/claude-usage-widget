@@ -26,7 +26,7 @@ process.on('unhandledRejection', (r) => log(`UNHANDLED: ${r?.stack || r}`));
 const PARTITION = 'persist:claude-usage';
 const USAGE_URL = 'https://claude.ai/settings/usage';
 const LOGIN_URL = 'https://claude.ai/login';
-const POLL_MS = 60 * 1000;
+const POLL_MS = 5 * 60 * 1000;
 
 let widgetWin = null;
 let loginWin = null;

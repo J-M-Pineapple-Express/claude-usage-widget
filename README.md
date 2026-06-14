@@ -1,6 +1,6 @@
 # Claude Usage Widget
 
-A tiny always-on-top desktop widget that shows your Claude usage at a glance: the **5-hour window**, the **weekly window**, your **extra-usage spend**, and your **prepaid balance**. Auto-refreshes every 60 seconds.
+A tiny always-on-top desktop widget that shows your Claude usage at a glance: the **5-hour window**, the **weekly window**, your **extra-usage spend**, and your **prepaid balance**. Auto-refreshes every 5 minutes (plus manual refresh any time).
 
 Built with Electron. Available for **Windows** and **macOS**.
 
@@ -56,7 +56,7 @@ The widget stores its own cookies in an isolated Electron partition. It does **n
 ## Controls
 
 - Drag by the title bar to move it.
-- **↻** — refresh now (it auto-refreshes every 60 s anyway).
+- **↻** — refresh now (it auto-refreshes every 5 min anyway).
 - **×** — quit.
 - Right-click the tray icon for **Refresh now** / **Sign out / switch account** / **Quit**.
 

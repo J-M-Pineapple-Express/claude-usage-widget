@@ -1,5 +1,10 @@
 # Changelog
 
+## v0.3.2 — 2026-06-13
+
+### Changed
+- **Auto-refresh interval 60 s → 5 min.** Each poll spins up a hidden browser to scrape the usage page, so 60 s was needlessly heavy. Manual refresh (the ↻ button and tray "Refresh now") is unchanged and still instant.
+
 ## v0.3.1 — 2026-06-13
 
 ### Fixed
