@@ -1,5 +1,10 @@
 # Changelog
 
+## v0.3.1 — 2026-06-13
+
+### Fixed
+- **macOS — weird frame/halo around the widget:** a frameless transparent window on macOS drew an OS drop shadow around the full window rect, which read as a light frame around the inset card. Disabled the window shadow (`hasShadow: false`), forced a fully transparent backing (`backgroundColor: '#00000000'`), and removed the card's 4px margin so it sits flush to the window edge. Windows was unaffected and is unchanged.
+
 ## v0.3.0 — 2026-05-13
 
 **Privacy & reliability pass.** Run a code review and patched every real finding.

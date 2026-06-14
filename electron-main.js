@@ -56,6 +56,8 @@ function createWidget() {
     height: 260,
     frame: false,
     transparent: true,
+    backgroundColor: '#00000000',
+    hasShadow: false,
     resizable: false,
     skipTaskbar: false,
     title: 'Claude Usage',

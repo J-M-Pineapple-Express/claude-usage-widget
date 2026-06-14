@@ -14,7 +14,7 @@ html, body {
   transition: border-color 120ms ease;
   border-radius: 12px;
   padding: 10px 12px 12px;
-  margin: 4px;
+  margin: 0;
   box-shadow: 0 8px 28px rgba(0,0,0,0.45);
   backdrop-filter: blur(8px);
 }
