@@ -8,6 +8,7 @@ contextBridge.exposeInMainWorld('usage', {
   onContext: (cb) => ipcRenderer.on('context:update', (_e, data) => cb(data)),
   onError: (cb) => ipcRenderer.on('usage:error', (_e, msg) => cb(msg)),
   refresh: () => ipcRenderer.send('widget:refresh'),
+  hide: () => ipcRenderer.send('widget:hide'),
   close: () => ipcRenderer.send('widget:close'),
   accentColor: () => ipcRenderer.invoke('theme:accentColor'),
 });

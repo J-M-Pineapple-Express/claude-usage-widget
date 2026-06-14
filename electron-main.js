@@ -364,6 +364,9 @@ ipcMain.handle('theme:accentColor', () => {
 });
 ipcMain.on('widget:close', () => app.quit());
 ipcMain.on('widget:refresh', () => pollOnce());
+ipcMain.on('widget:hide', () => {
+  if (widgetWin && !widgetWin.isDestroyed()) widgetWin.hide();
+});
 
 app.whenReady().then(async () => {
   log(`app ready — v${APP_VERSION}`);

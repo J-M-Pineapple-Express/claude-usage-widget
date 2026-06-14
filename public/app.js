@@ -88,6 +88,7 @@ $('refresh').addEventListener('click', () => {
   $('status').textContent = 'Refreshing…';
   window.usage.refresh();
 });
+$('hide').addEventListener('click', () => window.usage.hide());
 $('close').addEventListener('click', () => window.usage.close());
 
 window.usage.accentColor().then((color) => {

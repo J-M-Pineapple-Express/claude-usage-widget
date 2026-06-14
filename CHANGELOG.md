@@ -1,5 +1,13 @@
 # Changelog
 
+## v0.3.5 — 2026-06-14
+
+### Added
+- **Hide button** (`–` in the title bar). Tucks the always-on-top widget away when you need it out of the way; reopen it from the tray / menu-bar icon → **Show widget**.
+
+### Fixed
+- **Drop shadow fully gone.** v0.3.1 removed the OS window shadow (`hasShadow: false`), but the card still had a CSS `box-shadow` rendering a drop shadow inside the transparent window. Removed it.
+
 ## v0.3.4 — 2026-06-13
 
 ### Fixed
