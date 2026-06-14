@@ -1,5 +1,11 @@
 # Changelog
 
+## v0.3.3 — 2026-06-13
+
+### Added
+- **Claude Code context monitor.** New top row showing how full your active Claude Code context window is — the heads-up before auto-compaction. It reads the most-recently-active transcript under `~/.claude/projects/` (last turn's token usage: input + cache), polls every 15 s, and is independent of your claude.ai login. The bar runs green → yellow → **red** as you approach the compaction threshold.
+- **Window size selector.** The transcript doesn't record the window size, so click the context detail line to cycle the assumed window (200K → 500K → 1M); the choice is remembered. The bar measures against ~80% of the window, where auto-compact fires.
+
 ## v0.3.2 — 2026-06-13
 
 ### Changed

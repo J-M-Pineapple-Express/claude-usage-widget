@@ -46,6 +46,7 @@ The widget stores its own cookies in an isolated Electron partition. It does **n
 
 ## What it shows
 
+- **Context bar** — how full your active Claude Code context window is, so you get a heads-up before it auto-compacts. Reads the most-recently-active transcript under `~/.claude/projects/`, updates every 15 s. Click the line under the bar to set your window size (200K / 500K / 1M) — it measures against ~80% of that, where compaction kicks in. Green → yellow → red as you fill up.
 - **5-hour bar** — % of current session used + countdown to reset
 - **Weekly bar** — % of weekly limit used (All models) + reset day/time
 - **Extra spent** — dollars spent on extra usage / your monthly spend cap

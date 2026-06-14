@@ -61,6 +61,8 @@ html, body {
 }
 .pct { font-size: 11px; text-align: right; font-variant-numeric: tabular-nums; opacity: 0.85; }
 .reset { font-size: 10px; opacity: 0.55; margin: 2px 0 0 64px; }
+.ctx-detail { cursor: pointer; -webkit-app-region: no-drag; }
+.ctx-detail:hover { opacity: 0.85; }
 .divider { height: 1px; background: rgba(255,255,255,0.08); margin: 10px 0 6px; }
 .extra-row { display: flex; justify-content: space-between; font-size: 11px; padding: 2px 2px; }
 .extra-label { opacity: 0.6; }

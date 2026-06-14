@@ -1,6 +1,7 @@
 const { app, BrowserWindow, ipcMain, session, Menu, Tray, nativeImage, systemPreferences } = require('electron');
 const path = require('path');
 const fs = require('fs');
+const os = require('os');
 
 const DEBUG = process.env.CLAUDE_USAGE_DEBUG === '1';
 const APP_VERSION = require('./package.json').version;
@@ -28,12 +29,16 @@ const USAGE_URL = 'https://claude.ai/settings/usage';
 const LOGIN_URL = 'https://claude.ai/login';
 const POLL_MS = 5 * 60 * 1000;
 
+const CONTEXT_POLL_MS = 15 * 1000;  // context changes fast during active CC use
+
 let widgetWin = null;
 let loginWin = null;
 let loginHandled = false;
 let tray = null;
 let pollTimer = null;
+let ctxTimer = null;
 let lastData = null;
+let lastContext = null;
 
 function widgetSession() {
   return session.fromPartition(PARTITION, { cache: true });
@@ -53,7 +58,7 @@ function createWidget() {
   }
   widgetWin = new BrowserWindow({
     width: 300,
-    height: 260,
+    height: 318,
     frame: false,
     transparent: true,
     backgroundColor: '#00000000',
@@ -223,6 +228,96 @@ function startPolling() {
   pollTimer = setInterval(pollOnce, POLL_MS);
 }
 
+// ── Claude Code context monitor ────────────────────────────
+// Reads the most-recently-active Claude Code transcript on disk and reports how
+// full its context window is, so the widget can warn before auto-compaction.
+// Auth-independent (it's local files, not claude.ai), so it runs even before login.
+
+function newestTranscript() {
+  const root = path.join(os.homedir(), '.claude', 'projects');
+  let best = null;
+  let bestM = 0;
+  let dirs;
+  try { dirs = fs.readdirSync(root); } catch { return null; }
+  for (const dir of dirs) {
+    const full = path.join(root, dir);
+    let files;
+    try {
+      if (!fs.statSync(full).isDirectory()) continue;
+      files = fs.readdirSync(full);
+    } catch { continue; }
+    for (const f of files) {
+      if (!f.endsWith('.jsonl')) continue;
+      const fp = path.join(full, f);
+      try {
+        const s = fs.statSync(fp);
+        if (s.mtimeMs > bestM) { bestM = s.mtimeMs; best = { path: fp, dir, mtime: s.mtimeMs }; }
+      } catch {}
+    }
+  }
+  return best;
+}
+
+// Read only the tail of the transcript and find the last entry carrying usage.
+function lastUsageInTail(file) {
+  let fd;
+  try {
+    const size = fs.statSync(file).size;
+    const readLen = Math.min(size, 262144); // 256KB tail is plenty for the last turn
+    fd = fs.openSync(file, 'r');
+    const buf = Buffer.alloc(readLen);
+    fs.readSync(fd, buf, 0, readLen, size - readLen);
+    const lines = buf.toString('utf8').split('\n');
+    for (let i = lines.length - 1; i >= 0; i--) {
+      const line = lines[i].trim();
+      if (!line) continue;
+      try {
+        const o = JSON.parse(line);
+        const u = o && o.message && o.message.usage;
+        if (u) return u;
+      } catch {} // partial first line / non-JSON rows are skipped
+    }
+  } catch (e) {
+    log(`context tail read error: ${e.message}`);
+  } finally {
+    if (fd !== undefined) { try { fs.closeSync(fd); } catch {} }
+  }
+  return null;
+}
+
+function readClaudeContext() {
+  try {
+    const t = newestTranscript();
+    if (!t) return null;
+    const u = lastUsageInTail(t.path);
+    if (!u) return null;
+    const tokens =
+      (u.input_tokens || 0) +
+      (u.cache_creation_input_tokens || 0) +
+      (u.cache_read_input_tokens || 0);
+    if (!tokens) return null;
+    // Project label = trailing segment of the encoded "C--Users-...-projects-main" dir.
+    const project = t.dir.split('-').filter(Boolean).pop() || '?';
+    return { tokens, project, at: t.mtime };
+  } catch (e) {
+    log(`context read error: ${e.message}`);
+    return null;
+  }
+}
+
+function pushContext() {
+  lastContext = readClaudeContext();
+  if (widgetWin && !widgetWin.isDestroyed()) {
+    widgetWin.webContents.send('context:update', lastContext);
+  }
+}
+
+function startContextPolling() {
+  if (ctxTimer) clearInterval(ctxTimer);
+  pushContext();
+  ctxTimer = setInterval(pushContext, CONTEXT_POLL_MS);
+}
+
 function createTray() {
   try {
     const iconName = process.platform === 'darwin' ? 'trayTemplate.png' : 'tray.png';
@@ -253,6 +348,7 @@ function createTray() {
 }
 
 ipcMain.handle('usage:get', () => lastData);
+ipcMain.handle('context:get', () => lastContext);
 ipcMain.handle('app:version', () => APP_VERSION);
 ipcMain.handle('theme:accentColor', () => {
   if (process.platform !== 'win32') return null;
@@ -268,6 +364,7 @@ app.whenReady().then(async () => {
   log(`app ready — v${APP_VERSION}`);
   if (process.platform === 'darwin' && app.dock) app.dock.hide();
   createTray();
+  startContextPolling(); // local file read — independent of claude.ai auth
   const authed = await hasAuth();
   if (authed) {
     createWidget();

@@ -1,6 +1,6 @@
 {
   "name": "claude-usage-widget",
-  "version": "0.3.2",
+  "version": "0.3.3",
   "description": "Tiny always-on-top widget that shows your Claude 5-hour and weekly usage, extra-usage spend, and prepaid balance.",
   "author": "AfterRealm",
   "license": "MIT",
