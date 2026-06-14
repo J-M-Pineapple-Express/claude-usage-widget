@@ -16,7 +16,21 @@ Grab the latest installer for your OS from the **[Releases page](https://github.
 | macOS (Apple Silicon) | `ClaudeUsage-x.y.z-arm64.dmg` |
 | macOS (Intel) | `ClaudeUsage-x.y.z-x64.dmg` |
 
-> The app is not code-signed, so the first launch will trigger an OS warning. On Windows, click **More info → Run anyway**. On macOS, right-click the app → **Open** → **Open** the first time.
+> Almost every Mac sold since 2021 is Apple Silicon — grab the **`arm64`** build unless you know you're on an older Intel Mac. (Apple has ended Intel support, so the `x64` build is legacy-only.)
+
+> The app is **not code-signed or notarized**, so the OS will warn on first launch.
+>
+> **Windows:** click **More info → Run anyway**.
+>
+> **macOS:** the right-click → Open trick was removed in macOS 15 (Sequoia) and no longer works. Instead:
+> 1. Drag **Claude Usage** into `/Applications`.
+> 2. Open **Terminal** and run:
+>    ```bash
+>    xattr -dr com.apple.quarantine "/Applications/Claude Usage.app"
+>    ```
+> 3. Launch it normally.
+>
+> If you see **"Claude Usage is damaged and can't be opened"** — that's the same unsigned/quarantine block, not actual corruption. The `xattr` command above clears it.
 
 ---
 
