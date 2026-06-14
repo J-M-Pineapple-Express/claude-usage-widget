@@ -147,13 +147,18 @@ const SCRAPE_JS = `(() => {
     }
   }
   let extra = null;
-  const extraIdx = body.search(/Extra usage/i);
+  // Anthropic renamed this section "Extra usage" -> "Usage credits" (2026-06).
+  // Match either so old and new page versions both work.
+  const extraIdx = body.search(/Usage credits|Extra usage/i);
   if (extraIdx >= 0) {
-    const chunk = body.slice(extraIdx, extraIdx + 600);
+    const chunk = body.slice(extraIdx, extraIdx + 700);
     const spent = chunk.match(/\\$([\\d,]+(?:\\.\\d{2})?)\\s*spent/i);
     const reset = chunk.match(/Resets?\\s+([^\\n]{1,40})/i);
-    const limit = chunk.match(/\\$([\\d,]+(?:\\.\\d{2})?)\\s*\\|?\\s*Monthly spend limit/i);
-    const balance = chunk.match(/\\$([\\d,]+(?:\\.\\d{2})?)\\s*\\|?\\s*Current balance/i);
+    // The amount and its label can now be separated by an "Adjust limit" /
+    // "Buy usage credits" button. Allow intervening text, but no other "$" in
+    // the gap, so each label binds to the dollar amount immediately before it.
+    const limit = chunk.match(/\\$([\\d,]+(?:\\.\\d{2})?)[^$]{0,80}?Monthly spend limit/i);
+    const balance = chunk.match(/\\$([\\d,]+(?:\\.\\d{2})?)[^$]{0,80}?Current balance/i);
     extra = {
       spent: spent ? spent[1] : null,
       limit: limit ? limit[1] : null,

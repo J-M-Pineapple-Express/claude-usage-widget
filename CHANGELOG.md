@@ -1,5 +1,13 @@
 # Changelog
 
+## v0.3.4 — 2026-06-13
+
+### Fixed
+- **Extra usage / balance rows broke** (showed "—"). Anthropic renamed the settings-page section from **"Extra usage" → "Usage credits"**, so the scraper's anchor no longer matched and the whole block was skipped. Now matches either name, and the amount→label matching tolerates the new layout's inline buttons ("Adjust limit" / "Buy usage credits") between a dollar amount and its label.
+
+### Changed
+- **Context monitor now defaults to the 1M window** (both owners run 1M). Click the detail line to drop to 200K/500K for a standard window; the choice is still remembered.
+
 ## v0.3.3 — 2026-06-13
 
 ### Added

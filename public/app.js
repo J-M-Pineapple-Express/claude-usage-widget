@@ -35,8 +35,10 @@ function showError(msg) {
 // Auto-compact fires near the top of the window, so we measure against ~80% of it.
 // The window can't be read from the transcript, so it's user-selectable.
 const CTX_WINDOWS = [200000, 500000, 1000000];
-let ctxWindow = parseInt(localStorage.getItem('ctxWindow') || '200000', 10);
-if (!CTX_WINDOWS.includes(ctxWindow)) ctxWindow = 200000;
+// Default to the 1M window — that's what both owners run. Click the detail line
+// to drop to 200K/500K if you're on a standard window.
+let ctxWindow = parseInt(localStorage.getItem('ctxWindow') || '1000000', 10);
+if (!CTX_WINDOWS.includes(ctxWindow)) ctxWindow = 1000000;
 let lastCtx = null;
 
 function ctxColor(pct) {
