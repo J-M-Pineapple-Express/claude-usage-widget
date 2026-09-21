@@ -1,4 +1,4 @@
-const { app, BrowserWindow, ipcMain, session, Menu, Tray, nativeImage, systemPreferences } = require('electron');
+const { app, BrowserWindow, ipcMain, session, Menu, Tray, nativeImage, systemPreferences, net } = require('electron');
 const path = require('path');
 const fs = require('fs');
 const os = require('os');
@@ -25,9 +25,9 @@ process.on('uncaughtException', (e) => log(`UNCAUGHT: ${e.stack || e.message}`))
 process.on('unhandledRejection', (r) => log(`UNHANDLED: ${r?.stack || r}`));
 
 const PARTITION = 'persist:claude-usage';
-const USAGE_URL = 'https://claude.ai/settings/usage';
 const LOGIN_URL = 'https://claude.ai/login';
-const POLL_MS = 5 * 60 * 1000;
+// A JSON GET, not a hidden browser scraping a page, so per-minute polling is cheap again.
+const POLL_MS = 60 * 1000;
 
 const CONTEXT_POLL_MS = 15 * 1000;  // context changes fast during active CC use
 
@@ -58,7 +58,7 @@ function createWidget() {
   }
   widgetWin = new BrowserWindow({
     width: 300,
-    height: 318,
+    height: 418,
     frame: false,
     transparent: true,
     backgroundColor: '#00000000',
@@ -117,112 +117,174 @@ function createLogin() {
   });
 }
 
-const SCRAPE_JS = `(() => {
-  const body = document.body ? document.body.innerText : '';
-  function extractAfter(anchor, opts) {
-    const idx = body.search(anchor);
-    if (idx < 0) return null;
-    const win = body.slice(idx, idx + (opts.window || 400));
-    const pctMatch = win.match(/(\\d{1,3})\\s*%\\s*used/i);
-    const resetMatch = win.match(/Resets?\\s+([^\\n]{1,60})/i);
-    return {
-      percent: pctMatch ? parseInt(pctMatch[1], 10) : null,
-      reset: resetMatch ? resetMatch[1].trim() : null,
-    };
+// ── Usage API ──────────────────────────────────────────────
+// The settings page is backed by a JSON endpoint, and reading it directly beats
+// scraping innerText: nothing breaks when Anthropic edits a label, resets come
+// back as real timestamps, and a 401 tells us plainly that the session expired.
+
+const API_BASE = 'https://claude.ai/api';
+const orgCacheFile = path.join(userData, 'org.json');
+let orgId = null;
+let reauthPrompted = false;
+
+function readOrgCache() {
+  try {
+    const v = JSON.parse(fs.readFileSync(orgCacheFile, 'utf8'));
+    if (v && typeof v.orgId === 'string') return v.orgId;
+  } catch {}
+  return null;
+}
+
+function writeOrgCache(id) {
+  try { fs.writeFileSync(orgCacheFile, JSON.stringify({ orgId: id })); } catch {}
+}
+
+class HttpError extends Error {
+  constructor(status, body) {
+    super(`HTTP ${status}`);
+    this.status = status;
+    this.body = body;
   }
-  const fiveHour = extractAfter(/Current session/i, { window: 200 });
-  const weeklyIdx = body.search(/Weekly limits/i);
-  let weekly = null;
-  if (weeklyIdx >= 0) {
-    const weeklyChunk = body.slice(weeklyIdx, weeklyIdx + 600);
-    const allModelsIdx = weeklyChunk.search(/All models/i);
-    if (allModelsIdx >= 0) {
-      const slice = weeklyChunk.slice(allModelsIdx, allModelsIdx + 200);
-      const pm = slice.match(/(\\d{1,3})\\s*%\\s*used/i);
-      const rm = slice.match(/Resets?\\s+([^\\n]{1,60})/i);
-      weekly = {
-        percent: pm ? parseInt(pm[1], 10) : null,
-        reset: rm ? rm[1].trim() : null,
-      };
+}
+
+// Electron's net module sends the partition's cookies, so the session the user
+// signed into already authenticates the call — there's no token to manage.
+function apiGet(url) {
+  return new Promise((resolve, reject) => {
+    const req = net.request({ method: 'GET', url, session: widgetSession(), useSessionCookies: true });
+    req.setHeader('accept', 'application/json');
+    req.setHeader('anthropic-client-platform', 'web_claude_ai');
+    let body = '';
+    req.on('response', (res) => {
+      res.on('data', (c) => { body += c.toString(); });
+      res.on('end', () => {
+        if (res.statusCode >= 200 && res.statusCode < 300) {
+          try { resolve(JSON.parse(body)); }
+          catch { reject(new Error(`bad JSON from ${url}`)); }
+        } else {
+          reject(new HttpError(res.statusCode, body.slice(0, 200)));
+        }
+      });
+    });
+    req.on('error', reject);
+    req.end();
+  });
+}
+
+const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+
+// Org id, cheapest source first: disk cache, then the lastActiveOrg cookie the
+// web client already sets, then the organizations list as a last resort.
+async function resolveOrgId() {
+  if (orgId) return orgId;
+  const cached = readOrgCache();
+  if (cached) { orgId = cached; return orgId; }
+  try {
+    const jar = await widgetSession().cookies.get({ url: 'https://claude.ai', name: 'lastActiveOrg' });
+    const v = jar[0] && decodeURIComponent(jar[0].value || '');
+    if (v && UUID_RE.test(v)) {
+      orgId = v;
+      writeOrgCache(orgId);
+      log('org id resolved from lastActiveOrg cookie');
+      return orgId;
+    }
+  } catch {}
+  const orgs = await apiGet(`${API_BASE}/organizations`);
+  const first = Array.isArray(orgs) ? orgs.find(o => o && o.uuid) : null;
+  if (!first) throw new Error('no organization found on this account');
+  orgId = first.uuid;
+  writeOrgCache(orgId);
+  log('org id resolved from /organizations');
+  return orgId;
+}
+
+// The API returns money as minor units plus an exponent ({amount_minor: 8031,
+// exponent: 2} is $80.31). Anything missing stays null so the UI shows a dash.
+function money(m, currencyFallback) {
+  if (!m || m.amount_minor == null) return null;
+  const exp = m.exponent == null ? 2 : m.exponent;
+  return {
+    amount: m.amount_minor / Math.pow(10, exp),
+    currency: m.currency || currencyFallback || 'USD',
+  };
+}
+
+function normalize(usage, prepaid) {
+  const fh = usage.five_hour || {};
+  const wk = usage.seven_day || {};
+  const spend = usage.spend || {};
+  const bd = usage.seven_day_breakdown || {};
+
+  let balance = null;
+  if (prepaid) {
+    const credits = prepaid.balance && prepaid.balance.credits;
+    balance = money(credits, prepaid.currency);
+    if (!balance && typeof prepaid.amount === 'number') {
+      balance = { amount: prepaid.amount, currency: prepaid.currency || 'USD' };
     }
   }
-  let extra = null;
-  // Anthropic renamed this section "Extra usage" -> "Usage credits" (2026-06).
-  // Match either so old and new page versions both work.
-  const extraIdx = body.search(/Usage credits|Extra usage/i);
-  if (extraIdx >= 0) {
-    const chunk = body.slice(extraIdx, extraIdx + 700);
-    const spent = chunk.match(/\\$([\\d,]+(?:\\.\\d{2})?)\\s*spent/i);
-    const reset = chunk.match(/Resets?\\s+([^\\n]{1,40})/i);
-    // The amount and its label can now be separated by an "Adjust limit" /
-    // "Buy usage credits" button. Allow intervening text, but no other "$" in
-    // the gap, so each label binds to the dollar amount immediately before it.
-    const limit = chunk.match(/\\$([\\d,]+(?:\\.\\d{2})?)[^$]{0,80}?Monthly spend limit/i);
-    const balance = chunk.match(/\\$([\\d,]+(?:\\.\\d{2})?)[^$]{0,80}?Current balance/i);
-    extra = {
-      spent: spent ? spent[1] : null,
-      limit: limit ? limit[1] : null,
-      balance: balance ? balance[1] : null,
-      reset: reset ? reset[1].trim() : null,
-    };
-  }
-  return { fiveHour, weekly, extra, url: location.href, title: document.title };
-})();`;
 
-async function waitForText(win, pattern, timeoutMs = 12000) {
-  const start = Date.now();
-  while (Date.now() - start < timeoutMs) {
-    if (win.isDestroyed()) return false;
-    try {
-      const found = await win.webContents.executeJavaScript(
-        `!!document.body && /${pattern}/i.test(document.body.innerText)`
-      );
-      if (found) return true;
-    } catch {}
-    await new Promise(r => setTimeout(r, 250));
+  return {
+    fiveHour: { percent: fh.utilization ?? null, resetsAt: fh.resets_at || null },
+    weekly: { percent: wk.utilization ?? null, resetsAt: wk.resets_at || null },
+    spend: {
+      enabled: !!spend.enabled,
+      percent: spend.percent ?? null,
+      used: money(spend.used),
+      limit: money(spend.limit),
+    },
+    balance,
+    // Which products ate the weekly allowance: Claude Code / Chats / Cowork / Other.
+    breakdown: Array.isArray(bd.rows)
+      ? bd.rows.map(r => ({ key: r.key, name: r.display_name, percent: r.percent }))
+      : [],
+    at: Date.now(),
+  };
+}
+
+function handleSignedOut(status) {
+  log(`poll: session expired (HTTP ${status})`);
+  // A stale org id 403s the same way, so clear it before re-authenticating.
+  orgId = null;
+  try { fs.unlinkSync(orgCacheFile); } catch {}
+  if (widgetWin && !widgetWin.isDestroyed()) widgetWin.webContents.send('usage:signedout');
+  // Earlier versions just reported an error forever and left the only recovery
+  // buried in the tray menu. Reopen the sign-in window once instead.
+  if (!reauthPrompted && !loginWin) {
+    reauthPrompted = true;
+    if (pollTimer) { clearInterval(pollTimer); pollTimer = null; }
+    createLogin();
   }
-  return false;
 }
 
 async function pollOnce() {
-  let scraperWin = null;
   try {
-    scraperWin = new BrowserWindow({
-      show: false,
-      width: 800,
-      height: 600,
-      webPreferences: {
-        contextIsolation: true,
-        nodeIntegration: false,
-        session: widgetSession(),
-      },
-    });
-    await scraperWin.loadURL(USAGE_URL);
-    const ready = await waitForText(scraperWin, 'Current session|Weekly limits');
-    if (!ready) {
-      log('poll: timed out waiting for usage page to render');
-      if (widgetWin && !widgetWin.isDestroyed()) {
-        widgetWin.webContents.send('usage:error', 'Page did not render');
-      }
+    const id = await resolveOrgId();
+    const usage = await apiGet(`${API_BASE}/organizations/${id}/usage`);
+    // Prepaid balance is a separate call and entirely optional — never let it
+    // take down the numbers that actually matter.
+    let prepaid = null;
+    try {
+      prepaid = await apiGet(`${API_BASE}/organizations/${id}/prepaid/credits`);
+    } catch (e) {
+      if (DEBUG) log(`prepaid fetch skipped: ${e.message}`);
+    }
+    lastData = normalize(usage, prepaid);
+    reauthPrompted = false;
+    log(`poll ok: 5h=${lastData.fiveHour.percent} weekly=${lastData.weekly.percent}`);
+    if (widgetWin && !widgetWin.isDestroyed()) widgetWin.webContents.send('usage:update', lastData);
+  } catch (e) {
+    if (e instanceof HttpError && (e.status === 401 || e.status === 403)) {
+      handleSignedOut(e.status);
       return;
     }
-    const data = await scraperWin.webContents.executeJavaScript(SCRAPE_JS);
-    const haveData = data && ((data.fiveHour && data.fiveHour.percent != null) || (data.weekly && data.weekly.percent != null));
-    if (haveData) {
-      lastData = { ...data, at: Date.now() };
-      log(`poll ok: 5h=${data.fiveHour?.percent} weekly=${data.weekly?.percent}`);
-      if (widgetWin && !widgetWin.isDestroyed()) widgetWin.webContents.send('usage:update', lastData);
-    } else {
-      log(`poll empty (data shape: 5h=${!!data?.fiveHour} wk=${!!data?.weekly} ex=${!!data?.extra})`);
-      if (DEBUG && data) log(`DEBUG body: ${(data.bodyDump || '').slice(0, 800)}`);
-      if (widgetWin && !widgetWin.isDestroyed()) widgetWin.webContents.send('usage:error', 'Could not read usage page');
-    }
-  } catch (e) {
-    log(`poll error: ${e.stack || e.message}`);
-    if (widgetWin && !widgetWin.isDestroyed()) widgetWin.webContents.send('usage:error', e.message);
-  } finally {
-    if (scraperWin && !scraperWin.isDestroyed()) {
-      try { scraperWin.destroy(); } catch {}
+    // Transient network trouble (DNS blip, laptop asleep, wifi handover) is not
+    // worth spelling out as "net::ERR_NAME_NOT_RESOLVED" in a 300px widget. The
+    // next poll is 60s away and the last good numbers stay on screen.
+    const offline = /^net::/.test(e.message || '');
+    log(`poll ${offline ? 'offline' : 'error'}: ${offline ? e.message : (e.stack || e.message)}`);
+    if (widgetWin && !widgetWin.isDestroyed()) {
+      widgetWin.webContents.send('usage:error', offline ? 'Offline — retrying' : e.message);
     }
   }
 }

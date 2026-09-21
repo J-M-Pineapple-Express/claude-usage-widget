@@ -7,6 +7,7 @@ contextBridge.exposeInMainWorld('usage', {
   onUpdate: (cb) => ipcRenderer.on('usage:update', (_e, data) => cb(data)),
   onContext: (cb) => ipcRenderer.on('context:update', (_e, data) => cb(data)),
   onError: (cb) => ipcRenderer.on('usage:error', (_e, msg) => cb(msg)),
+  onSignedOut: (cb) => ipcRenderer.on('usage:signedout', () => cb()),
   refresh: () => ipcRenderer.send('widget:refresh'),
   hide: () => ipcRenderer.send('widget:hide'),
   close: () => ipcRenderer.send('widget:close'),

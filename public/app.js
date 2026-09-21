@@ -1,26 +1,99 @@
 const $ = (id) => document.getElementById(id);
 
+// ── formatting ─────────────────────────────────────────────
+// The API hands back real ISO timestamps now, so the widget decides how to
+// phrase them instead of reusing whatever string the settings page rendered.
+
+function fmtMoney(m) {
+  if (!m || m.amount == null) return null;
+  const neg = m.amount < 0;
+  const abs = Math.abs(m.amount);
+  // Whole dollars read better without the trailing zeros ($100, not $100.00).
+  const body = Number.isInteger(abs) ? String(abs) : abs.toFixed(2);
+  return (neg ? '-$' : '$') + body;
+}
+
+function fmtReset(iso) {
+  if (!iso) return null;
+  const t = new Date(iso);
+  if (isNaN(t)) return null;
+  const mins = Math.round((t - Date.now()) / 60000);
+  if (mins <= 0) return 'any moment';
+  if (mins < 60) return `in ${mins}m`;
+  const hrs = Math.floor(mins / 60);
+  // Past a day out, a weekday and clock time is more useful than "in 79h".
+  if (hrs >= 24) {
+    const day = t.toLocaleDateString(undefined, { weekday: 'short' });
+    const time = t.toLocaleTimeString(undefined, { hour: 'numeric', minute: '2-digit' });
+    return `${day} ${time}`;
+  }
+  const rem = mins % 60;
+  return rem ? `in ${hrs}h ${rem}m` : `in ${hrs}h`;
+}
+
+function setBar(barId, pctId, percent) {
+  if (percent == null) return;
+  $(barId).style.width = Math.min(100, percent) + '%';
+  $(pctId).textContent = Math.round(percent) + '%';
+}
+
+// ── render ─────────────────────────────────────────────────
+
+function renderBreakdown(rows) {
+  const wrap = $('breakdown-wrap');
+  if (!rows || !rows.length) { wrap.classList.add('hidden'); return; }
+  wrap.classList.remove('hidden');
+  const host = $('breakdown');
+  host.textContent = '';
+  for (const r of rows) {
+    const row = document.createElement('div');
+    row.className = 'row bd-row';
+
+    const label = document.createElement('div');
+    label.className = 'label';
+    label.textContent = r.name || r.key;
+
+    const bar = document.createElement('div');
+    bar.className = 'bar';
+    const fill = document.createElement('div');
+    fill.className = 'fill';
+    fill.style.width = Math.min(100, r.percent || 0) + '%';
+    bar.appendChild(fill);
+
+    const pct = document.createElement('div');
+    pct.className = 'pct';
+    pct.textContent = Math.round(r.percent || 0) + '%';
+
+    row.append(label, bar, pct);
+    host.appendChild(row);
+  }
+}
+
 function render(data) {
   if (!data) return;
   const fh = data.fiveHour || {};
   const wk = data.weekly || {};
-  if (fh.percent != null) {
-    $('bar-5h').style.width = Math.min(100, fh.percent) + '%';
-    $('pct-5h').textContent = Math.round(fh.percent) + '%';
+
+  setBar('bar-5h', 'pct-5h', fh.percent);
+  const r5 = fmtReset(fh.resetsAt);
+  if (r5) $('reset-5h').textContent = 'resets ' + r5;
+
+  setBar('bar-wk', 'pct-wk', wk.percent);
+  const rw = fmtReset(wk.resetsAt);
+  if (rw) $('reset-wk').textContent = 'resets ' + rw;
+
+  const spend = data.spend || {};
+  if (!spend.enabled) {
+    $('extra-spent').textContent = 'off';
+  } else {
+    const used = fmtMoney(spend.used);
+    const limit = fmtMoney(spend.limit);
+    $('extra-spent').textContent = used ? (limit ? `${used} / ${limit}` : used) : '—';
   }
-  if (fh.reset) $('reset-5h').textContent = 'resets ' + fh.reset;
-  if (wk.percent != null) {
-    $('bar-wk').style.width = Math.min(100, wk.percent) + '%';
-    $('pct-wk').textContent = Math.round(wk.percent) + '%';
-  }
-  if (wk.reset) $('reset-wk').textContent = 'resets ' + wk.reset;
-  const ex = data.extra || {};
-  if (ex.spent != null) {
-    $('extra-spent').textContent = '$' + ex.spent + (ex.limit ? ' / $' + ex.limit : '');
-  }
-  if (ex.balance != null) {
-    $('extra-balance').textContent = '$' + ex.balance;
-  }
+  $('extra-balance').textContent = fmtMoney(data.balance) || '—';
+
+  renderBreakdown(data.breakdown);
+
   const t = new Date(data.at || Date.now());
   $('status').classList.remove('err');
   $('status').textContent = 'Updated ' + t.toLocaleTimeString();
@@ -29,6 +102,13 @@ function render(data) {
 function showError(msg) {
   $('status').classList.add('err');
   $('status').textContent = msg || 'Error reading usage';
+}
+
+// The main process reopens the sign-in window on its own; this just explains
+// why the numbers stopped, instead of showing a generic failure.
+function showSignedOut() {
+  $('status').classList.add('err');
+  $('status').textContent = 'Session expired — signing in…';
 }
 
 // ── Claude Code context monitor ────────────────────────────
@@ -72,6 +152,7 @@ function renderContext(c) {
 window.usage.onUpdate(render);
 window.usage.onContext(renderContext);
 window.usage.onError(showError);
+window.usage.onSignedOut(showSignedOut);
 window.usage.get().then((d) => d && render(d));
 window.usage.context().then((c) => renderContext(c));
 window.usage.version().then((v) => { if (v) $('version').textContent = 'v' + v; });

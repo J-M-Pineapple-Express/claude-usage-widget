@@ -42,12 +42,20 @@
 
     <div class="divider"></div>
     <div class="extra-row">
-      <span class="extra-label">Extra spent</span>
+      <span class="extra-label">Spend</span>
       <span id="extra-spent" class="extra-val">—</span>
     </div>
     <div class="extra-row">
       <span class="extra-label">Balance</span>
       <span id="extra-balance" class="extra-val">—</span>
+    </div>
+
+    <!-- Which products ate this week's allowance. Rows are built from the API
+         response, so a new product category shows up without a code change. -->
+    <div id="breakdown-wrap" class="breakdown-wrap hidden">
+      <div class="divider"></div>
+      <div class="section-label">This week by product</div>
+      <div id="breakdown"></div>
     </div>
 
     <div id="status" class="status">Connecting…</div>

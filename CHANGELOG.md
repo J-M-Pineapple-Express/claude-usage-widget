@@ -1,5 +1,50 @@
 # Changelog
 
+## v0.4.0 — 2026-09-20
+
+**Reads the usage API instead of scraping the settings page.** The widget used to
+load `claude.ai/settings/usage` in a hidden browser and pattern-match the rendered
+English text. That broke every time Anthropic edited a label — twice already
+(v0.3.4's "Extra usage" -> "Usage credits", and now "Weekly limits" -> "This week").
+It now calls `GET /api/organizations/{org}/usage` directly, authenticated by the
+session cookies the widget already stores.
+
+### Fixed
+- **Weekly bar stuck on "—".** The scraper anchored on the literal strings
+  "Weekly limits" and "All models". The settings page now says "This week", so the
+  weekly percentage came back null while the 5-hour bar kept working. Reading
+  `seven_day.utilization` from the API removes the whole class of failure.
+- **Expired session was a dead end.** When the cookie lapsed, claude.ai redirected
+  the scraper to the login page, and the widget reported "Could not read usage page"
+  every poll, forever — the only recovery was a tray menu item nobody would think
+  to look for. A 401/403 is now recognized as signed-out, the widget says so, and
+  the sign-in window reopens on its own (once, not in a loop).
+
+### Added
+- **Monthly spend row** — `$80.31 / $100` from `spend.used` / `spend.limit`, or
+  "off" when usage credits aren't enabled.
+- **This week by product** — Claude Code / Chats / Cowork / Other, from
+  `seven_day_breakdown`. Rows are built from the response, so a new product
+  category appears without a code change.
+- **Transient network errors stay quiet.** A DNS blip or a sleeping laptop used
+  to put a raw `net::ERR_NAME_NOT_RESOLVED` in the status line. It now reads
+  "Offline — retrying" and leaves the last good numbers on screen; the next poll
+  recovers on its own.
+- **Negative balances render correctly** (`-$0.01`). The old regex only matched a
+  leading `$` and silently dropped the minus sign.
+
+### Changed
+- **Real reset timestamps.** The API returns ISO datetimes, so the widget phrases
+  them itself: "in 2h 23m" for the session window, "Wed 11:00 PM" for anything
+  more than a day out. Previously it echoed whatever text the page had rendered.
+- **No more hidden Chromium window.** Each poll was spinning up and tearing down a
+  full browser window. It's now a plain JSON GET through Electron's `net` module.
+- **Auto-refresh back to 60 s** (was 5 min). The 5-minute interval existed only
+  because scraping was expensive; it isn't anymore.
+- Org id is resolved once and cached to `org.json` in userData — from the
+  `lastActiveOrg` cookie when present, otherwise `GET /api/organizations`.
+  The cache is dropped on a 403 so a stale id can't wedge the widget.
+
 ## v0.3.5 — 2026-06-14
 
 ### Added
