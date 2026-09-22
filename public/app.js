@@ -168,8 +168,11 @@ function renderContext(c) {
   }
   const where = (c.session ? `${c.project} · ${c.session}` : c.project) + (stale ? ' · idle' : '');
   $('ctx-where').textContent = where;
-  $('ctx-where').title = where;
+  $('ctx-where').title = `${where}\nClick to see where you left off`;
 }
+
+$('ctx-where').addEventListener('click', () => window.usage.openRecap());
+$('ac-activity').addEventListener('click', () => window.usage.autoContinue.openActivity());
 
 window.usage.onUpdate(render);
 window.usage.onContext(renderContext);

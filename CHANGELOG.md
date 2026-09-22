@@ -1,5 +1,27 @@
 # Changelog
 
+## v0.6.0 — 2026-09-22
+
+### Added
+- **Where you left off.** Click the project/session line under the context bar to
+  open a small window with Claude Code's latest "while you were away" recap for
+  that session, plus the last thing you asked. Recaps are Claude Code's own and
+  can be turned on or off in its `/config`; with them off, you still get the last
+  prompt.
+- **Auto Continue activity.** Click **activity** next to the Auto Continue switch
+  to see:
+  - the last check: when it ran, your 5-hour and weekly numbers, and whether it's
+    waiting on a reset
+  - anything waiting to send: which window, when the limit hit, any interrupted
+    agents, and the exact message that will be pasted
+  - recent sends, including ones that couldn't reach their window
+- **Unnamed sessions get a name.** If you never used `/rename`, the widget shows
+  the title Claude Code generated for the session instead of nothing.
+
+### Fixed
+- An Auto Continue entry whose window couldn't be identified was dropped quietly.
+  It's now recorded in the activity history as dropped.
+
 ## v0.5.2 — 2026-09-22
 
 ### Fixed

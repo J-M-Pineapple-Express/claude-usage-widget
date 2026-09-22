@@ -12,7 +12,11 @@ contextBridge.exposeInMainWorld('usage', {
   hide: () => ipcRenderer.send('widget:hide'),
   close: () => ipcRenderer.send('widget:close'),
   accentColor: () => ipcRenderer.invoke('theme:accentColor'),
+  recap: () => ipcRenderer.invoke('session:recap'),
+  openRecap: () => ipcRenderer.send('panel:recap'),
   autoContinue: {
+    activity: () => ipcRenderer.invoke('autocontinue:activity'),
+    openActivity: () => ipcRenderer.send('panel:activity'),
     get: () => ipcRenderer.invoke('autocontinue:get'),
     set: (patch) => ipcRenderer.invoke('autocontinue:set', patch),
     onChange: (cb) => ipcRenderer.on('autocontinue:update', (_e, data) => cb(data)),

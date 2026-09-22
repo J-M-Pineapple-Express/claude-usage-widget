@@ -48,7 +48,7 @@ The widget stores its own cookies in an isolated Electron partition. It does **n
 
 ## What it shows
 
-- **Context**: how full your active Claude Code context window is, so you get a heads-up before it auto-compacts. Reads the most recently active transcript under `~/.claude/projects/` and updates every 15 s. Click the line under the bar to set your window size (200K / 500K / 1M); it measures against about 80% of that, where compaction kicks in. Green → yellow → red as you fill up. The line under the bar also shows the transcript's size (`jsonl 4.7MB`, green under 12MB, yellow under 15MB, red above), and the line below that shows which project and session it's measuring, for example `Claude Command Center · Projects`.
+- **Context**: how full your active Claude Code context window is, so you get a heads-up before it auto-compacts. Reads the most recently active transcript under `~/.claude/projects/` and updates every 15 s. Click the line under the bar to set your window size (200K / 500K / 1M); it measures against about 80% of that, where compaction kicks in. Green → yellow → red as you fill up. The line under the bar also shows the transcript's size (`jsonl 4.7MB`, green under 12MB, yellow under 15MB, red above), and the line below that shows which project and session it's measuring, for example `Claude Command Center · Projects`. **Click that line** to see where you left off: Claude Code's latest recap for the session and the last thing you asked.
 - **5-hour**: % of your current session window used, and when it resets.
 - **Weekly**: % of your weekly limit used, and the reset day and time.
 - **Spend**: usage credits spent this month against your monthly cap, or "off" if usage credits aren't enabled.
@@ -69,6 +69,8 @@ It works with Claude Code in a terminal, in VS Code, or in the Claude Code Deskt
 **Turn it on** with the **Auto Continue** switch on the widget (or tray icon → **Auto Continue**). That registers a small hook in `~/.claude/settings.json` so Claude Code tells the widget when a session stops on a rate limit. Turning it off removes the hook. Your settings file is backed up to `settings.json.auto-continue-backup` before each change, and the widget won't touch a settings file that isn't valid JSON.
 
 **Resume agents** (off by default): if the limit also stopped subagents or teammates, the message names them. On, it asks Claude to resume them. Off, it lists them and waits for you. Resuming a batch of agents can use up a good chunk of a fresh window, so only turn this on if that's what you want while you're away.
+
+Click **activity** next to the switch to see the last check, anything waiting to send (with the exact message), and what it sent recently.
 
 Good to know:
 - It only sends once both the 5-hour and weekly bars are under 100%.

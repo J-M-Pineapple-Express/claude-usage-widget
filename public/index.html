@@ -23,7 +23,7 @@
       <div class="pct" id="pct-ctx">—</div>
     </div>
     <div class="reset ctx-detail" id="ctx-detail" title="Claude Code context window fill — click to change the window size (200K / 500K / 1M)">waiting…</div>
-    <div class="reset ctx-where" id="ctx-where"></div>
+    <div class="reset ctx-where" id="ctx-where" title="Click to see where you left off"></div>
 
     <div class="divider"></div>
 
@@ -54,7 +54,7 @@
       <div class="divider"></div>
       <div class="extra-row ac-row"
            title="When a usage limit resets, send the stalled Claude session a message telling it to continue where it left off.">
-        <span class="extra-label">Auto Continue</span>
+        <span class="extra-label">Auto Continue <button id="ac-activity" class="link" title="What Auto Continue is waiting to send, and what it sent last">activity</button></span>
         <label class="switch">
           <input type="checkbox" id="ac-enabled" />
           <span class="slider"></span>

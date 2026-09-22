@@ -62,7 +62,19 @@ html, body {
 .reset { font-size: 10px; opacity: 0.55; margin: 2px 0 0 64px; }
 .ctx-detail { cursor: pointer; -webkit-app-region: no-drag; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .ctx-detail:hover { opacity: 0.85; }
-.ctx-where { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.ctx-where { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; cursor: pointer; -webkit-app-region: no-drag; }
+.ctx-where:hover { opacity: 0.9; text-decoration: underline; text-underline-offset: 2px; }
+.link {
+  background: none;
+  border: none;
+  padding: 0 0 0 6px;
+  font: inherit;
+  font-size: 10px;
+  color: #e89070;
+  opacity: 0.8;
+  cursor: pointer;
+}
+.link:hover { opacity: 1; text-decoration: underline; text-underline-offset: 2px; }
 .ctx-where:empty { display: none; }
 .divider { height: 1px; background: rgba(255,255,255,0.08); margin: 10px 0 6px; }
 .extra-row { display: flex; justify-content: space-between; font-size: 11px; padding: 2px 2px; }

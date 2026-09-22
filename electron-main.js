@@ -514,15 +514,64 @@ function nudgeWin(entry, message) {
     });
 }
 
+// ── Auto Continue activity (for the Activity window) ──────
+// lastCheck is in memory (it's rewritten every minute); sent/failed nudges
+// are kept in a short history file so "last ping" survives a restart.
+const AUTO_CONTINUE_HISTORY_PATH = path.join(userData, 'auto-continue-history.json');
+const AUTO_CONTINUE_HISTORY_MAX = 20;
+let autoContinueLastCheck = null;
+
+function loadAutoContinueHistory() {
+    try {
+        const h = JSON.parse(fs.readFileSync(AUTO_CONTINUE_HISTORY_PATH, 'utf8'));
+        return Array.isArray(h) ? h : [];
+    } catch {
+        return [];
+    }
+}
+
+function recordAutoContinueEvent(event) {
+    const history = [{ at: Date.now(), ...event }, ...loadAutoContinueHistory()].slice(0, AUTO_CONTINUE_HISTORY_MAX);
+    try {
+        fs.writeFileSync(AUTO_CONTINUE_HISTORY_PATH, JSON.stringify(history, null, 2));
+    } catch (e) {
+        log(`auto-continue: history write failed: ${e.message}`);
+    }
+}
+
+function autoContinueActivity() {
+    const cfg = loadAutoContinueConfig();
+    let queue = [];
+    try { queue = withQueueLock(loadAutoContinueQueue); } catch {}
+    return {
+        ...autoContinueState(),
+        lastCheck: autoContinueLastCheck,
+        pending: queue.map(e => ({
+            window: e.window_title || 'unknown window',
+            queuedAt: e.queued_at ? e.queued_at * 1000 : null,
+            attempts: e.attempts || 0,
+            agents: (e.failed_agents || []).map(a => a.agent_id).filter(Boolean),
+            message: buildNudgeMessage(e, cfg),
+        })),
+        history: loadAutoContinueHistory(),
+    };
+}
+
 // `usage` is this poll's normalized data — reuses the same fetch pollOnce()
 // already made, no extra API calls just for this check.
 async function checkAutoContinueQueue(usage) {
     if (!usage) return;
     const fiveHourClear = usage.fiveHour.percent == null || usage.fiveHour.percent < 100;
     const weeklyClear = usage.weekly.percent == null || usage.weekly.percent < 100;
-    if (!fiveHourClear || !weeklyClear) return;
-
     const cfg = loadAutoContinueConfig();
+    autoContinueLastCheck = {
+        at: Date.now(),
+        fiveHour: usage.fiveHour.percent,
+        weekly: usage.weekly.percent,
+        limitsClear: fiveHourClear && weeklyClear,
+        enabled: !!cfg.enabled,
+    };
+    if (!fiveHourClear || !weeklyClear) return;
     if (!cfg.enabled) return;
 
     let queue;
@@ -542,14 +591,29 @@ async function checkAutoContinueQueue(usage) {
         // it was queued and now.
         if (Date.now() / 1000 - entry.queued_at < 30) continue;
         const attempts = (entry.attempts || 0) + 1;
-        const succeeded = await nudgeWindow(entry, buildNudgeMessage(entry, cfg));
+        const message = buildNudgeMessage(entry, cfg);
+        const window = entry.window_title || 'unknown window';
+        if (!entry.hwnd && !entry.app_path) {
+            // The hook couldn't tell which window the session was in, so
+            // there's nothing to send to.
+            log(`auto-continue: entry ${entry.id} has no target window, dropping`);
+            dropIds.add(entry.id);
+            recordAutoContinueEvent({ result: 'no window', window, message });
+            continue;
+        }
+        const succeeded = await nudgeWindow(entry, message);
         if (succeeded) {
             dropIds.add(entry.id);
+            recordAutoContinueEvent({ result: 'sent', window, message });
         } else if (attempts >= MAX_NUDGE_ATTEMPTS) {
-            log(`auto-continue: giving up on ${entry.id} (${entry.window_title || 'unknown window'}) after ${attempts} failed attempts`);
+            log(`auto-continue: giving up on ${entry.id} (${window}) after ${attempts} failed attempts`);
             dropIds.add(entry.id);
+            recordAutoContinueEvent({ result: 'gave up', window, message, attempts });
         } else {
             attemptsById.set(entry.id, attempts);
+            // Only the first failure goes in the history; a locked screen
+            // would otherwise fill it with one row per minute.
+            if (attempts === 1) recordAutoContinueEvent({ result: 'retrying', window, message });
         }
     }
     if (dropIds.size || attemptsById.size) applyQueueOutcomes(dropIds, attemptsById);
@@ -696,47 +760,108 @@ function launchCwd(file) {
   return cwd;
 }
 
-// Session name set with /rename, stored as a "custom-title" row that can sit
-// anywhere in a transcript (some run to tens of MB). Scan the file once, then
-// only the bytes appended since, so the 15 s poll stays cheap.
+// Session details that can sit anywhere in a transcript (some run to tens of
+// MB): the /rename title, Claude Code's auto-generated title, the latest
+// "while you were away" recap, and the last prompt the user typed. Scan the
+// file once, then only the bytes appended since, so the 15 s poll stays cheap.
 const { StringDecoder } = require('string_decoder');
-let titleScan = { file: null, offset: 0, carry: '', title: null };
 
-function sessionTitle(file) {
+function freshScan(file) {
+  return { file, offset: 0, carry: '', customTitle: null, aiTitle: null, recap: null, lastPrompt: null };
+}
+let transcriptScan = freshScan(null);
+
+// A user row that is something the person actually typed, as opposed to a
+// tool result, a slash-command echo, or an injected system note.
+function typedPrompt(o) {
+  if (o.type !== 'user' || o.isMeta || o.isSidechain || !o.message) return null;
+  const c = o.message.content;
+  let text = null;
+  if (typeof c === 'string') text = c;
+  else if (Array.isArray(c) && !c.some(p => p && p.type === 'tool_result')) {
+    const t = c.find(p => p && p.type === 'text');
+    text = t ? t.text : null;
+  }
+  if (!text) return null;
+  text = text.trim();
+  if (!text || text.startsWith('<')) return null;
+  return { text, at: o.timestamp || null };
+}
+
+function scanLine(scan, line) {
+  const interesting =
+    line.includes('"custom-title"') || line.includes('"ai-title"') ||
+    line.includes('"away_summary"') || line.includes('"type":"user"');
+  if (!interesting || line.includes('"tool_result"')) return;
+  let o;
+  try { o = JSON.parse(line); } catch { return; }
+  if (o.type === 'custom-title' && o.customTitle) scan.customTitle = String(o.customTitle).trim();
+  else if (o.type === 'ai-title' && o.aiTitle) scan.aiTitle = String(o.aiTitle).trim();
+  else if (o.type === 'system' && o.subtype === 'away_summary' && o.content) {
+    scan.recap = {
+      text: String(o.content).replace(/\s*\(disable recaps in \/config\)\s*$/i, '').trim(),
+      at: o.timestamp || null,
+    };
+  } else {
+    const p = typedPrompt(o);
+    if (p) scan.lastPrompt = p;
+  }
+}
+
+function scanTranscript(file) {
   let fd;
   try {
     const size = fs.statSync(file).size;
-    if (titleScan.file !== file || size < titleScan.offset) {
-      titleScan = { file, offset: 0, carry: '', title: null };
-    }
-    if (size === titleScan.offset) return titleScan.title;
+    if (transcriptScan.file !== file || size < transcriptScan.offset) transcriptScan = freshScan(file);
+    if (size === transcriptScan.offset) return transcriptScan;
     fd = fs.openSync(file, 'r');
     const decoder = new StringDecoder('utf8');
     const chunk = Buffer.alloc(4 * 1024 * 1024);
-    let pos = titleScan.offset;
-    let carry = titleScan.carry;
+    let pos = transcriptScan.offset;
+    let carry = transcriptScan.carry;
     while (pos < size) {
       const n = fs.readSync(fd, chunk, 0, Math.min(chunk.length, size - pos), pos);
       if (n <= 0) break;
       pos += n;
       const lines = (carry + decoder.write(chunk.subarray(0, n))).split('\n');
       carry = lines.pop();
-      for (const line of lines) {
-        if (!line.includes('"custom-title"')) continue;
-        try {
-          const o = JSON.parse(line);
-          if (o.type === 'custom-title' && o.customTitle) titleScan.title = String(o.customTitle).trim();
-        } catch {}
-      }
+      for (const line of lines) scanLine(transcriptScan, line);
     }
-    titleScan.offset = pos;
-    titleScan.carry = carry;
+    transcriptScan.offset = pos;
+    transcriptScan.carry = carry;
   } catch (e) {
-    log(`session title read error: ${e.message}`);
+    log(`transcript scan error: ${e.message}`);
   } finally {
     if (fd !== undefined) { try { fs.closeSync(fd); } catch {} }
   }
-  return titleScan.title;
+  return transcriptScan;
+}
+
+// Project = the session's real folder name. The encoded directory name can't
+// be decoded reliably (spaces and dashes both become "-"), so it's only a
+// fallback when no row carries a cwd.
+function projectName(t, cwd) {
+  return cwd
+    ? path.basename(cwd.replace(/[\\/]+$/, '')) || cwd
+    : (t.dir.split('-').filter(Boolean).pop() || '?');
+}
+
+// Everything the "Where you left off" window shows, for whichever session
+// the context bar is currently measuring.
+function sessionRecap() {
+  const t = newestTranscript();
+  if (!t) return null;
+  const scan = scanTranscript(t.path);
+  const cwd = launchCwd(t.path);
+  return {
+    project: projectName(t, cwd),
+    session: scan.customTitle || scan.aiTitle || null,
+    sessionIsAuto: !scan.customTitle && !!scan.aiTitle,
+    recap: scan.recap,
+    lastPrompt: scan.lastPrompt,
+    transcript: t.path,
+    updatedAt: t.mtime,
+  };
 }
 
 function readClaudeContext() {
@@ -751,15 +876,18 @@ function readClaudeContext() {
       (u.cache_creation_input_tokens || 0) +
       (u.cache_read_input_tokens || 0);
     if (!tokens) return null;
-    // Project = the session's real folder name. The encoded directory name
-    // can't be decoded reliably (spaces and dashes both become "-"), so it's
-    // only a fallback when no row carries a cwd.
-    const project = cwd
-      ? path.basename(cwd.replace(/[\\/]+$/, '')) || cwd
-      : (t.dir.split('-').filter(Boolean).pop() || '?');
+    const project = projectName(t, cwd);
     let bytes = null;
     try { bytes = fs.statSync(t.path).size; } catch {}
-    return { tokens, project, session: sessionTitle(t.path), bytes, at: t.mtime };
+    const scan = scanTranscript(t.path);
+    return {
+      tokens,
+      project,
+      session: scan.customTitle || scan.aiTitle,
+      hasRecap: !!(scan.recap || scan.lastPrompt),
+      bytes,
+      at: t.mtime,
+    };
   } catch (e) {
     log(`context read error: ${e.message}`);
     return null;
@@ -833,6 +961,39 @@ ipcMain.handle('context:get', () => lastContext);
 ipcMain.handle('app:version', () => APP_VERSION);
 ipcMain.handle('autocontinue:get', () => autoContinueState());
 ipcMain.handle('autocontinue:set', (_e, patch) => updateAutoContinue(patch || {}));
+ipcMain.handle('autocontinue:activity', () => autoContinueActivity());
+ipcMain.handle('session:recap', () => sessionRecap());
+
+// Small secondary windows (recap, Auto Continue activity). One of each at a
+// time; opening again just brings the existing one forward.
+const panels = {};
+function openPanel(name, { width, height, title }) {
+  const existing = panels[name];
+  if (existing && !existing.isDestroyed()) {
+    existing.show();
+    existing.focus();
+    return;
+  }
+  const win = new BrowserWindow({
+    width,
+    height,
+    title,
+    backgroundColor: '#18161c',
+    autoHideMenuBar: true,
+    alwaysOnTop: true,
+    webPreferences: {
+      preload: path.join(__dirname, 'preload.js'),
+      contextIsolation: true,
+      nodeIntegration: false,
+    },
+  });
+  win.setMenuBarVisibility(false);
+  win.loadFile(path.join(__dirname, 'public', `${name}.html`));
+  win.on('closed', () => { delete panels[name]; });
+  panels[name] = win;
+}
+ipcMain.on('panel:recap', () => openPanel('recap', { width: 420, height: 420, title: 'Where you left off' }));
+ipcMain.on('panel:activity', () => openPanel('activity', { width: 440, height: 500, title: 'Auto Continue activity' }));
 ipcMain.handle('theme:accentColor', () => {
   if (process.platform !== 'win32') return null;
   try {
