@@ -1007,7 +1007,102 @@ async function listSessions() {
       showing: !!(current && tp && current.path === tp),
     };
   }).sort((a, b) => (b.lastActive || 0) - (a.lastActive || 0));
-  return { pinned: pinnedSessionId, sessions };
+  let background = [];
+  try { background = listBackground(new Set(running.map(s => s.sessionId))); } catch {}
+  return { pinned: pinnedSessionId, sessions, background };
+}
+
+// Background sessions: bots and scripts that drive Claude Code with `claude -p
+// --resume`, one short process per message (a Discord bot, for example). They
+// never show up as running interactive sessions, so find them by transcript:
+// headless (entrypoint sdk-cli), written in the last day, and resumed across
+// 2+ prompts, which leaves out one-shot `claude -p` calls.
+const BACKGROUND_WINDOW_MS = 24 * 60 * 60 * 1000;
+const backgroundScan = new Map(); // path -> { offset, carry, entrypoint, cwd, title, prompts }
+
+function isPrompt(o) {
+  if (o.type !== 'user' || o.isSidechain || o.isMeta || o.isCompactSummary) return false;
+  const c = o.message && o.message.content;
+  if (typeof c === 'string') return c.trim().length > 0;
+  return Array.isArray(c) && c.some(b => b && b.type === 'text') && !c.some(b => b && b.type === 'tool_result');
+}
+
+function scanBackground(file, size) {
+  let s = backgroundScan.get(file);
+  if (!s || size < s.offset) s = { offset: 0, carry: '', entrypoint: null, cwd: null, title: null, prompts: 0 };
+  if (size > s.offset) {
+    let fd;
+    try {
+      fd = fs.openSync(file, 'r');
+      const buf = Buffer.alloc(size - s.offset);
+      fs.readSync(fd, buf, 0, buf.length, s.offset);
+      const lines = (s.carry + buf.toString('utf8')).split('\n');
+      s.carry = lines.pop();
+      for (const line of lines) {
+        if (!line) continue;
+        let o;
+        try { o = JSON.parse(line); } catch { continue; }
+        if (!s.entrypoint && o.entrypoint) s.entrypoint = o.entrypoint;
+        if (!s.cwd && o.cwd) s.cwd = o.cwd;
+        if (o.type === 'custom-title' && o.customTitle) s.title = o.customTitle;
+        else if (o.type === 'ai-title' && o.aiTitle && !s.title) s.title = o.aiTitle;
+        if (isPrompt(o)) s.prompts++;
+      }
+      s.offset = size;
+    } catch {} finally { if (fd !== undefined) fs.closeSync(fd); }
+  }
+  backgroundScan.set(file, s);
+  return s;
+}
+
+function busySessionIds() {
+  const ids = new Set();
+  let files = [];
+  try { files = fs.readdirSync(SESSIONS_DIR).filter(f => /^\d+\.json$/.test(f)); } catch { return ids; }
+  for (const f of files) {
+    try {
+      const s = JSON.parse(fs.readFileSync(path.join(SESSIONS_DIR, f), 'utf8'));
+      if (s.sessionId && s.pid && pidAlive(s.pid)) ids.add(s.sessionId);
+    } catch {}
+  }
+  return ids;
+}
+
+function listBackground(exclude) {
+  const cutoff = Date.now() - BACKGROUND_WINDOW_MS;
+  const busy = busySessionIds();
+  const out = [];
+  let dirs = [];
+  try { dirs = fs.readdirSync(PROJECTS_DIR); } catch { return out; }
+  for (const d of dirs) {
+    let files = [];
+    try { files = fs.readdirSync(path.join(PROJECTS_DIR, d)).filter(f => f.endsWith('.jsonl')); } catch { continue; }
+    for (const f of files) {
+      const tp = path.join(PROJECTS_DIR, d, f);
+      let st;
+      try { st = fs.statSync(tp); } catch { continue; }
+      if (st.mtimeMs < cutoff) continue;
+      const sessionId = f.slice(0, -6);
+      if (exclude.has(sessionId)) continue;
+      const s = scanBackground(tp, st.size);
+      if (s.entrypoint !== 'sdk-cli' || s.prompts < 2) continue;
+      const u = lastUsageInTail(tp);
+      // Last three folders of the launch dir: "projects/main" alone says nothing.
+      const where = s.cwd ? String(s.cwd).replace(/[\\/]+$/, '').split(/[\\/]/).slice(-3).join(' / ') : d;
+      out.push({
+        sessionId,
+        name: s.title || null,
+        project: where,
+        host: 'Headless · claude -p',
+        status: busy.has(sessionId) ? 'busy' : 'idle',
+        prompts: s.prompts,
+        lastActive: st.mtimeMs,
+        tokens: u ? (u.input_tokens || 0) + (u.cache_creation_input_tokens || 0) + (u.cache_read_input_tokens || 0) : null,
+        bytes: st.size,
+      });
+    }
+  }
+  return out.sort((a, b) => b.lastActive - a.lastActive);
 }
 
 // Everything the "Where you left off" window shows, for whichever session

@@ -72,6 +72,35 @@ function sessionRow(s) {
   return row;
 }
 
+// A bot or script's session: one short `claude -p` run per message, so it's
+// only "running" mid-reply. Shown for reference; it can't be pinned.
+function backgroundRow(s) {
+  const row = el('div', 'sess bg');
+  const top = el('div', 'sess-top');
+  const dot = el('span', 'dot ' + (s.status === 'busy' ? 'busy' : 'idle'));
+  dot.title = s.status === 'busy' ? 'Replying now' : 'Waiting for its next message';
+  top.append(dot, el('span', 'sess-name', s.name || s.project), el('span', 'sess-project', s.name ? s.project : ''));
+
+  const meta = el('div', 'sess-meta');
+  meta.append(el('span', null, s.host), el('span', null, `${s.prompts} messages`));
+  if (s.lastActive) meta.append(el('span', null, `last reply ${ago(s.lastActive)}`));
+
+  const stats = el('div', 'sess-stats');
+  if (s.tokens != null) {
+    const pct = (s.tokens / (ctxWindow * 0.8)) * 100;
+    const c = el('span', null, `context ${Math.round(pct)}%`);
+    c.style.color = ctxColor(pct);
+    stats.append(c, el('span', 'dim', `${fmtK(s.tokens)} tokens`));
+  }
+  if (s.bytes != null) {
+    const b = el('span', null, `jsonl ${fmtBytes(s.bytes)}`);
+    b.style.color = sizeColor(s.bytes);
+    stats.append(b);
+  }
+  row.append(top, meta, stats);
+  return row;
+}
+
 function render(data) {
   if (!data) return;
   const follow = $('follow');
@@ -89,9 +118,14 @@ function render(data) {
   list.textContent = '';
   if (!data.sessions.length) {
     list.append(el('div', 'block empty', 'No Claude Code sessions running right now.'));
-    return;
   }
   for (const s of data.sessions) list.append(sessionRow(s));
+
+  const bg = $('background');
+  bg.textContent = '';
+  const rows = data.background || [];
+  $('bg-section').hidden = !rows.length;
+  for (const s of rows) bg.append(backgroundRow(s));
 }
 
 function refresh() {

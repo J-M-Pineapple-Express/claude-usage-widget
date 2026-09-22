@@ -1,5 +1,16 @@
 # Changelog
 
+## v0.7.1 — 2026-09-22
+
+### Added
+- **Bots & scripts in the Sessions window.** Bots and scripts that drive Claude
+  Code with `claude -p --resume` (a Discord bot, for example) start a short
+  process for every message, so they never appeared as running sessions. The
+  Sessions window now lists them in their own section: any headless session
+  that has handled 2 or more messages in the last day, with how many messages
+  it has handled, when it last replied, whether it's replying right now,
+  context % and transcript size. One-off `claude -p` calls are left out.
+
 ## v0.7.0 — 2026-09-22
 
 **Multiple sessions.** If you run several Claude Code sessions at once (a few
