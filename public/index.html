@@ -28,10 +28,19 @@
           <div class="pct" id="pct-ctx">—</div>
         </div>
         <div class="reset ctx-detail" id="ctx-detail" title="Claude Code context window fill — click to change the window size (200K / 500K / 1M)">waiting…</div>
-        <div class="reset ctx-where hidden" id="ctx-where">
+      </div>
+    </section>
+
+    <section class="sec" data-sec="sessions">
+      <button class="sec-head" aria-expanded="true"><span class="chev">▾</span><span class="sec-title">Sessions</span><span class="sec-sum" id="sum-sessions"></span></button>
+      <div class="sec-body">
+        <!-- The session the context bar is measuring: hover for its recap,
+             click to open it in a window. -->
+        <div class="ctx-where hidden" id="ctx-where">
           <span id="ctx-where-text" class="where-text" title="Click to see where you left off"></span>
-          <button id="ctx-sessions" class="link" title="All running Claude Code sessions">sessions</button>
+          <button id="ctx-sessions" class="link" title="All running Claude Code sessions">window ↗</button>
         </div>
+        <div id="sess-list" class="sess-list"></div>
       </div>
     </section>
 

@@ -161,6 +161,48 @@ html, body {
 .sec.collapsed .sec-sum { display: block; }
 @media (prefers-reduced-motion: reduce) { .chev { transition: none; } }
 
+/* Sessions section */
+.sec[data-sec="sessions"] .ctx-where { font-size: 10px; margin: 2px 0 4px; }
+.sess-list { display: grid; gap: 2px; }
+.dot { width: 6px; height: 6px; border-radius: 50%; flex: none; align-self: center; }
+.dot.busy { background: #3fb950; box-shadow: 0 0 0 2px rgba(63,185,80,0.2); }
+.dot.idle { background: rgba(255,255,255,0.3); }
+.si { border-radius: 5px; }
+.si.showing { background: rgba(232,144,112,0.08); }
+.si.open { background: rgba(255,255,255,0.04); }
+.si-head, .si-bot {
+  display: flex;
+  align-items: baseline;
+  gap: 5px;
+  width: 100%;
+  min-width: 0;
+  padding: 3px 4px;
+  font: inherit;
+  font-size: 11px;
+  color: inherit;
+  background: none;
+  border: none;
+  text-align: left;
+  -webkit-app-region: no-drag;
+}
+.si-head { cursor: pointer; }
+.si-head:hover { background: rgba(255,255,255,0.05); border-radius: 5px; }
+.si-head:focus-visible { outline: 1px solid rgba(255,255,255,0.4); border-radius: 5px; }
+.si .chev { transform: rotate(-90deg); }
+.si.open .chev { transform: none; }
+.si-name { font-weight: 600; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; min-width: 0; flex: 0 1 auto; }
+.si-proj { opacity: 0.5; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; min-width: 0; flex: 1 1 0; }
+.si-pct { flex: none; font-variant-numeric: tabular-nums; font-size: 10px; }
+.si-body { padding: 0 6px 6px 20px; display: grid; gap: 3px; font-size: 10px; }
+.si-meta { opacity: 0.6; overflow-wrap: anywhere; font-variant-numeric: tabular-nums; }
+.si-recap { font-size: 10.5px; line-height: 1.4; opacity: 0.9; overflow-wrap: anywhere; }
+.si-recap.dim { opacity: 0.5; }
+.si-actions { display: flex; gap: 10px; }
+.si-actions .link { padding: 0; font-size: 10px; }
+.si-actions .link:disabled { opacity: 0.4; cursor: default; text-decoration: none; }
+.si-group { font-size: 9.5px; opacity: 0.45; letter-spacing: 0.3px; margin: 4px 0 0 4px; }
+.si-bot { opacity: 0.7; padding-left: 18px; cursor: default; }
+
 .status { font-size: 10px; opacity: 0.5; margin-top: 8px; text-align: center; }
 .version { font-size: 9px; opacity: 0.3; text-align: center; margin-top: 2px; font-variant-numeric: tabular-nums; }
 .status.err { color: #ff8a7a; opacity: 0.85; }

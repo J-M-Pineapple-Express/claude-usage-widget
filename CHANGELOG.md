@@ -1,5 +1,14 @@
 # Changelog
 
+## v0.10.0 — 2026-09-22
+
+### Added
+- **Sessions section.** Session info has its own collapsible section, listing
+  every running Claude Code session. Click a session to expand it (host, last
+  active, tokens, transcript size, recap) with **show in widget** and
+  **recap ↗**; several can be open at once. Bots and scripts are listed
+  below. Folded, the header reads `3 running · 1 bot`.
+
 ## v0.9.0 — 2026-09-22
 
 ### Added

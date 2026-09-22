@@ -221,12 +221,125 @@ function sessionsTooltip(d) {
   return lines.join('\n');
 }
 
+// ── Sessions section: every running session as an accordion ──
+// Click a session to expand it (host, context, size, recap); several can be
+// open. Rows rebuild on each refresh, so open rows and recaps live out here.
+const sessOpen = new Set();
+const sessRecaps = new Map();
+let lastSessions = null;
+
+function el(tag, cls, text) {
+  const e = document.createElement(tag);
+  if (cls) e.className = cls;
+  if (text != null) e.textContent = text;
+  return e;
+}
+const ctxPct = (t) => (t != null ? Math.round((t / (ctxWindow * 0.8)) * 100) : null);
+
+function loadSessRecap(id) {
+  window.usage.recap(id).then((r) => {
+    sessRecaps.set(id, r || null);
+    if (sessOpen.has(id)) renderSessionList(lastSessions);
+  }).catch(() => {});
+}
+
+function repin(id) {
+  window.usage.pinSession(id).then(() => {
+    window.usage.context().then(renderContext);
+    refreshHoverInfo(true);
+  });
+}
+
+function sessionItem(s) {
+  const open = sessOpen.has(s.sessionId);
+  const item = el('div', 'si' + (s.showing ? ' showing' : '') + (open ? ' open' : ''));
+  const head = el('button', 'si-head');
+  head.setAttribute('aria-expanded', String(open));
+  head.title = open ? 'Collapse' : 'Show details';
+  const dot = el('span', 'dot ' + (s.status === 'busy' ? 'busy' : 'idle'));
+  dot.title = s.status === 'busy' ? 'Working' : 'Idle';
+  const name = el('span', 'si-name', s.name || 'Unnamed session');
+  const proj = el('span', 'si-proj', s.project);
+  const p = ctxPct(s.tokens);
+  const pct = el('span', 'si-pct', p != null ? `${p}%` : '');
+  if (p != null) pct.style.color = ctxColor(p);
+  head.append(el('span', 'chev', '▾'), dot, name, proj, pct);
+  head.addEventListener('click', () => {
+    if (sessOpen.has(s.sessionId)) sessOpen.delete(s.sessionId);
+    else { sessOpen.add(s.sessionId); loadSessRecap(s.sessionId); }
+    renderSessionList(lastSessions);
+  });
+  item.append(head);
+  if (!open) return item;
+
+  const body = el('div', 'si-body');
+  const meta = [s.host, s.lastActive ? `active ${agoText(s.lastActive)}` : null].filter(Boolean).join(' · ');
+  body.append(el('div', 'si-meta', meta));
+  const stats = el('div', 'si-meta');
+  if (s.tokens != null) stats.append(`${fmtK(s.tokens)} tokens`);
+  if (s.bytes != null) {
+    if (s.tokens != null) stats.append(' · ');
+    const b = el('span', null, `jsonl ${fmtBytes(s.bytes)}`);
+    b.style.color = sizeColor(s.bytes);
+    stats.append(b);
+  }
+  body.append(stats);
+  if (!sessRecaps.has(s.sessionId)) body.append(el('div', 'si-recap dim', 'Loading recap…'));
+  else {
+    const r = sessRecaps.get(s.sessionId);
+    if (r && r.recap && r.recap.text) body.append(el('div', 'si-recap', clip(r.recap.text, 320)));
+    else if (r && r.lastPrompt && r.lastPrompt.text) body.append(el('div', 'si-recap dim', `Last asked: ${clip(r.lastPrompt.text, 200)}`));
+    else body.append(el('div', 'si-recap dim', 'No recap yet.'));
+  }
+  const actions = el('div', 'si-actions');
+  const pin = el('button', 'link', s.pinned ? 'unpin' : s.showing ? 'in widget' : 'show in widget');
+  pin.disabled = s.showing && !s.pinned;
+  pin.title = s.pinned ? 'Go back to following the latest session' : 'Pin this session to the context bar';
+  pin.addEventListener('click', () => repin(s.pinned ? null : s.sessionId));
+  const rec = el('button', 'link', 'recap ↗');
+  rec.title = 'Open this session\'s recap in a window';
+  rec.addEventListener('click', () => window.usage.pinSession(s.sessionId).then(() => window.usage.openRecap()));
+  actions.append(pin, rec);
+  body.append(actions);
+  item.append(body);
+  return item;
+}
+
+function renderSessionList(d) {
+  if (!d) return;
+  lastSessions = d;
+  const list = $('sess-list');
+  list.textContent = '';
+  const running = d.sessions || [];
+  const live = new Set(running.map(s => s.sessionId));
+  for (const id of [...sessOpen]) if (!live.has(id)) { sessOpen.delete(id); sessRecaps.delete(id); }
+  for (const s of running) list.append(sessionItem(s));
+  const bots = d.background || [];
+  if (bots.length) {
+    list.append(el('div', 'si-group', 'Bots & scripts'));
+    for (const s of bots) {
+      const row = el('div', 'si-bot');
+      const p = ctxPct(s.tokens);
+      row.title = `Headless (claude -p) · ${s.prompts} messages · last reply ${agoText(s.lastActive)}` +
+        (s.bytes != null ? ` · jsonl ${fmtBytes(s.bytes)}` : '');
+      row.append(el('span', 'dot ' + (s.status === 'busy' ? 'busy' : 'idle')), el('span', 'si-name', s.name || s.project),
+        el('span', 'si-proj', `${s.prompts} msgs`), el('span', 'si-pct', p != null ? `${p}%` : ''));
+      list.append(row);
+    }
+  }
+  $('sum-sessions').textContent = `${running.length} running` + (bots.length ? ` · ${bots.length} bot${bots.length > 1 ? 's' : ''}` : '');
+}
+
 let hoverFetchedAt = 0;
 function refreshHoverInfo(force) {
   if (!force && Date.now() - hoverFetchedAt < 10000) return;
   hoverFetchedAt = Date.now();
   window.usage.recap().then((r) => { $('ctx-where-text').title = recapTooltip(r); }).catch(() => {});
-  window.usage.sessions().then((d) => { $('ctx-sessions').title = sessionsTooltip(d); }).catch(() => {});
+  window.usage.sessions().then((d) => {
+    $('ctx-sessions').title = sessionsTooltip(d);
+    renderSessionList(d);
+    for (const id of sessOpen) loadSessRecap(id); // keep open recaps current
+  }).catch(() => {});
 }
 
 function renderContext(c) {
@@ -256,12 +369,9 @@ function renderContext(c) {
   }
   const where = (c.session ? `${c.project} · ${c.session}` : c.project) + (stale ? ' · idle' : '');
   $('ctx-where').classList.remove('hidden');
-  $('ctx-where-text').textContent = where;
+  $('ctx-where-text').textContent = (c.pinned ? 'Pinned: ' : 'In widget: ') + where;
   refreshHoverInfo();
-  // The link doubles as the pin indicator, since a long project/session
-  // name can push anything appended to the text out of view.
-  const others = (c.runningSessions || 0) - 1;
-  $('ctx-sessions').textContent = c.pinned ? 'pinned' : others > 0 ? `+${others} more` : 'sessions';
+  $('ctx-sessions').textContent = 'window ↗';
   updateSummaries();
 }
 
