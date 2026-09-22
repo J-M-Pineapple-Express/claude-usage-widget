@@ -1,5 +1,34 @@
 # Changelog
 
+## v0.9.0 — 2026-09-22
+
+### Added
+- **Collapsible sections.** Context, Limits, Extra usage, Auto Continue and
+  This week by product each have a ▾ header. Click it to fold the section; a
+  folded header still shows a one-line summary (`Limits  5h 75% · wk 9%`,
+  `Auto Continue  on`, `This week by product  Claude Code 100%`). The widget
+  remembers which sections you folded.
+- **Details on hover.** Hovering the project/session line shows the "Where you
+  left off" recap and your last prompt; hovering **sessions** / **+N more**
+  lists every running session (working or idle, host, context %, transcript
+  size, last active) plus bots and scripts. Clicking still opens the full
+  windows.
+- **Recaps expand in the Sessions window.** "where I left off" on a session
+  now opens its recap in place, accordion style, instead of opening another
+  window. Several can be open at once and they stay open through refreshes.
+  "open in a window ↗" inside the recap keeps the old behavior.
+
+### Fixed
+- **No more scroll bar.** The window used a fixed height, so the Resets row
+  added in v0.8.0 pushed the content past it. The window now sizes itself to
+  its content and follows sections being folded, rows appearing, and so on.
+- **"+1 more" was hard to read.** The session line's dimming stacked on the
+  link's own, so the link came out too dark. Only the text is dimmed now.
+
+### Changed
+- Recaps are cached per transcript (up to 12), so opening another session's
+  recap doesn't make the widget re-read its own transcript from the start.
+
 ## v0.8.0 — 2026-09-22
 
 ### Added

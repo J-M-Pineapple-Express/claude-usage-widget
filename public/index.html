@@ -17,73 +17,91 @@
       </div>
     </div>
 
-    <div class="row">
-      <div class="label">Context</div>
-      <div class="bar"><div id="bar-ctx" class="fill"></div></div>
-      <div class="pct" id="pct-ctx">—</div>
-    </div>
-    <div class="reset ctx-detail" id="ctx-detail" title="Claude Code context window fill — click to change the window size (200K / 500K / 1M)">waiting…</div>
-    <div class="reset ctx-where hidden" id="ctx-where">
-      <span id="ctx-where-text" class="where-text" title="Click to see where you left off"></span>
-      <button id="ctx-sessions" class="link" title="All running Claude Code sessions">sessions</button>
-    </div>
-
-    <div class="divider"></div>
-
-    <div class="row">
-      <div class="label">5-hour</div>
-      <div class="bar"><div id="bar-5h" class="fill"></div></div>
-      <div class="pct" id="pct-5h">—</div>
-    </div>
-    <div class="reset" id="reset-5h">waiting…</div>
-
-    <div class="row">
-      <div class="label">Weekly</div>
-      <div class="bar"><div id="bar-wk" class="fill"></div></div>
-      <div class="pct" id="pct-wk">—</div>
-    </div>
-    <div class="reset" id="reset-wk">waiting…</div>
-
-    <div class="divider"></div>
-    <div class="extra-row">
-      <span class="extra-label">Spend</span>
-      <span id="extra-spent" class="extra-val">—</span>
-    </div>
-    <div class="extra-row">
-      <span class="extra-label">Balance</span>
-      <span id="extra-balance" class="extra-val">—</span>
-    </div>
-    <div id="resets-row" class="extra-row hidden">
-      <span class="extra-label">Resets</span>
-      <button id="resets-val" class="extra-val link resets-val" title="">—</button>
-    </div>
-    <div id="ac-wrap" class="hidden">
-      <div class="divider"></div>
-      <div class="extra-row ac-row"
-           title="When a usage limit resets, send the stalled Claude session a message telling it to continue where it left off.">
-        <span class="extra-label">Auto Continue <button id="ac-activity" class="link" title="What Auto Continue is waiting to send, and what it sent last">activity</button></span>
-        <label class="switch">
-          <input type="checkbox" id="ac-enabled" />
-          <span class="slider"></span>
-        </label>
+    <!-- Each section folds under its header. A folded header still shows a
+         one-line summary (sum-*), filled in by updateSummaries() in app.js. -->
+    <section class="sec" data-sec="ctx">
+      <button class="sec-head" aria-expanded="true"><span class="chev">▾</span><span class="sec-title">Context</span><span class="sec-sum" id="sum-ctx"></span></button>
+      <div class="sec-body">
+        <div class="row">
+          <div class="label">Context</div>
+          <div class="bar"><div id="bar-ctx" class="fill"></div></div>
+          <div class="pct" id="pct-ctx">—</div>
+        </div>
+        <div class="reset ctx-detail" id="ctx-detail" title="Claude Code context window fill — click to change the window size (200K / 500K / 1M)">waiting…</div>
+        <div class="reset ctx-where hidden" id="ctx-where">
+          <span id="ctx-where-text" class="where-text" title="Click to see where you left off"></span>
+          <button id="ctx-sessions" class="link" title="All running Claude Code sessions">sessions</button>
+        </div>
       </div>
-      <div id="ac-agents-row" class="extra-row ac-row ac-sub"
-           title="On: the continue message also resumes any agents the limit interrupted. Off: it names them and waits for you.">
-        <span class="extra-label">Resume agents</span>
-        <label class="switch">
-          <input type="checkbox" id="ac-agents" />
-          <span class="slider"></span>
-        </label>
+    </section>
+
+    <section class="sec" data-sec="limits">
+      <button class="sec-head" aria-expanded="true"><span class="chev">▾</span><span class="sec-title">Limits</span><span class="sec-sum" id="sum-limits"></span></button>
+      <div class="sec-body">
+        <div class="row">
+          <div class="label">5-hour</div>
+          <div class="bar"><div id="bar-5h" class="fill"></div></div>
+          <div class="pct" id="pct-5h">—</div>
+        </div>
+        <div class="reset" id="reset-5h">waiting…</div>
+
+        <div class="row">
+          <div class="label">Weekly</div>
+          <div class="bar"><div id="bar-wk" class="fill"></div></div>
+          <div class="pct" id="pct-wk">—</div>
+        </div>
+        <div class="reset" id="reset-wk">waiting…</div>
       </div>
-    </div>
+    </section>
+
+    <section class="sec" data-sec="extra">
+      <button class="sec-head" aria-expanded="true"><span class="chev">▾</span><span class="sec-title">Extra usage</span><span class="sec-sum" id="sum-extra"></span></button>
+      <div class="sec-body">
+        <div class="extra-row">
+          <span class="extra-label">Spend</span>
+          <span id="extra-spent" class="extra-val">—</span>
+        </div>
+        <div class="extra-row">
+          <span class="extra-label">Balance</span>
+          <span id="extra-balance" class="extra-val">—</span>
+        </div>
+        <div id="resets-row" class="extra-row hidden">
+          <span class="extra-label">Resets</span>
+          <button id="resets-val" class="extra-val link resets-val" title="">—</button>
+        </div>
+      </div>
+    </section>
+
+    <section id="ac-wrap" class="sec hidden" data-sec="ac">
+      <button class="sec-head" aria-expanded="true"><span class="chev">▾</span><span class="sec-title">Auto Continue</span><span class="sec-sum" id="sum-ac"></span></button>
+      <div class="sec-body">
+        <div class="extra-row ac-row"
+             title="When a usage limit resets, send the stalled Claude session a message telling it to continue where it left off.">
+          <span class="extra-label">Auto Continue <button id="ac-activity" class="link" title="What Auto Continue is waiting to send, and what it sent last">activity</button></span>
+          <label class="switch">
+            <input type="checkbox" id="ac-enabled" />
+            <span class="slider"></span>
+          </label>
+        </div>
+        <div id="ac-agents-row" class="extra-row ac-row ac-sub"
+             title="On: the continue message also resumes any agents the limit interrupted. Off: it names them and waits for you.">
+          <span class="extra-label">Resume agents</span>
+          <label class="switch">
+            <input type="checkbox" id="ac-agents" />
+            <span class="slider"></span>
+          </label>
+        </div>
+      </div>
+    </section>
 
     <!-- Which products ate this week's allowance. Rows are built from the API
          response, so a new product category shows up without a code change. -->
-    <div id="breakdown-wrap" class="breakdown-wrap hidden">
-      <div class="divider"></div>
-      <div class="section-label">This week by product</div>
-      <div id="breakdown"></div>
-    </div>
+    <section id="breakdown-wrap" class="sec breakdown-wrap hidden" data-sec="breakdown">
+      <button class="sec-head" aria-expanded="true"><span class="chev">▾</span><span class="sec-title">This week by product</span><span class="sec-sum" id="sum-breakdown"></span></button>
+      <div class="sec-body">
+        <div id="breakdown"></div>
+      </div>
+    </section>
 
     <div id="status" class="status">Connecting…</div>
     <div id="version" class="version">v—</div>

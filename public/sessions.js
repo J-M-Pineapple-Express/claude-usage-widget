@@ -29,6 +29,43 @@ function sizeColor(b) {
   return mb < 12 ? '#3fb950' : mb < 15 ? '#d29922' : '#f85149';
 }
 
+// "where I left off" expands in place, accordion style. Rows are rebuilt on
+// every refresh, so which ones are open and their recaps live out here.
+const expanded = new Set();
+const recaps = new Map(); // sessionId -> recap (or null once loaded with none)
+let lastData = null;
+const RECAP_MAX_PROMPT = 500;
+
+function loadRecap(id) {
+  return window.usage.recap(id).then((r) => {
+    recaps.set(id, r || null);
+    if (expanded.has(id)) render(lastData);
+  }).catch(() => {});
+}
+
+function recapPanel(id) {
+  const box = el('div', 'sess-recap');
+  box.addEventListener('click', (e) => e.stopPropagation()); // don't toggle the pin
+  if (!recaps.has(id)) { box.append(el('div', 'dim', 'Loading…')); return box; }
+  const r = recaps.get(id);
+  if (r && r.recap && r.recap.text) {
+    box.append(el('div', 'recap-label', `Where you left off · ${ago(toMs(r.recap.at))}`), el('div', 'recap-text', r.recap.text));
+  } else {
+    box.append(el('div', 'recap-text empty',
+      'No recap yet. Claude Code writes one when you come back to a session after being away (recaps can be turned on or off in /config).'));
+  }
+  if (r && r.lastPrompt && r.lastPrompt.text) {
+    const t = r.lastPrompt.text;
+    box.append(el('div', 'recap-label', `Last thing you asked · ${ago(toMs(r.lastPrompt.at))}`),
+      el('div', 'recap-text prompt', t.length > RECAP_MAX_PROMPT ? t.slice(0, RECAP_MAX_PROMPT - 1) + '…' : t));
+  }
+  const pop = el('button', 'link', 'open in a window ↗');
+  pop.title = 'Pin this session to the widget and open its recap in its own window';
+  pop.addEventListener('click', () => window.usage.pinSession(id).then(() => window.usage.openRecap()));
+  box.append(pop);
+  return box;
+}
+
 function sessionRow(s) {
   const row = el('div', 'sess' + (s.showing ? ' showing' : ''));
   row.title = s.pinned ? 'Pinned to the widget. Click to unpin.' : 'Click to show this session in the widget';
@@ -58,14 +95,20 @@ function sessionRow(s) {
     b.style.color = sizeColor(s.bytes);
     stats.append(b);
   }
-  const recap = el('button', 'link', 'where I left off');
+  const open = expanded.has(s.sessionId);
+  const recap = el('button', 'link', `where I left off ${open ? '▴' : '▾'}`);
+  recap.setAttribute('aria-expanded', String(open));
+  recap.title = open ? 'Hide the recap' : 'Show the recap here';
   recap.addEventListener('click', (e) => {
     e.stopPropagation();
-    window.usage.pinSession(s.sessionId).then(() => window.usage.openRecap());
+    if (expanded.has(s.sessionId)) expanded.delete(s.sessionId);
+    else { expanded.add(s.sessionId); loadRecap(s.sessionId); }
+    render(lastData);
   });
   stats.append(recap);
 
   row.append(top, meta, stats);
+  if (open) row.append(recapPanel(s.sessionId));
   row.addEventListener('click', () => {
     window.usage.pinSession(s.pinned ? null : s.sessionId).then(render);
   });
@@ -103,6 +146,7 @@ function backgroundRow(s) {
 
 function render(data) {
   if (!data) return;
+  lastData = data;
   const follow = $('follow');
   follow.textContent = '';
   if (data.pinned) {
@@ -129,7 +173,14 @@ function render(data) {
 }
 
 function refresh() {
-  window.usage.sessions().then(render).catch(() => {});
+  window.usage.sessions().then((d) => {
+    // Keep open recaps current; forget ones for sessions that ended.
+    const live = new Set((d.sessions || []).map(s => s.sessionId));
+    for (const id of [...expanded]) {
+      if (!live.has(id)) { expanded.delete(id); recaps.delete(id); } else loadRecap(id);
+    }
+    render(d);
+  }).catch(() => {});
 }
 
 refresh();

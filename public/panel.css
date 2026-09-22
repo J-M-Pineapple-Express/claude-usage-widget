@@ -71,6 +71,23 @@ h2 {
 .sess-meta { opacity: 0.6; }
 .sess-stats { font-variant-numeric: tabular-nums; }
 .sess-stats .link { font-size: 11px; margin-left: auto; }
+/* "where I left off", expanded in place */
+.sess-recap {
+  margin-top: 8px;
+  padding: 8px 10px;
+  border-radius: 6px;
+  background: rgba(255,255,255,0.035);
+  border-left: 2px solid rgba(232,144,112,0.5);
+  cursor: default;
+  display: grid;
+  gap: 4px;
+}
+.recap-label { font-size: 10px; opacity: 0.5; letter-spacing: 0.2px; }
+.recap-label + .recap-text { margin-bottom: 4px; }
+.recap-text { font-size: 12px; line-height: 1.45; white-space: pre-wrap; overflow-wrap: anywhere; user-select: text; }
+.recap-text.prompt { opacity: 0.8; }
+.sess-recap .link { justify-self: start; font-size: 11px; padding: 0; }
+.sess-recap .dim { opacity: 0.5; font-size: 11px; }
 .dim { opacity: 0.5; }
 .dot { width: 7px; height: 7px; border-radius: 50%; flex: none; }
 .dot.busy { background: #3fb950; box-shadow: 0 0 0 2px rgba(63,185,80,0.2); }

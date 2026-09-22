@@ -116,6 +116,8 @@ function render(data) {
 
   renderResets(data.resets);
   renderBreakdown(data.breakdown);
+  lastBreakdown = data.breakdown || [];
+  updateSummaries();
 
   const t = new Date(data.at || Date.now());
   $('status').classList.remove('err');
@@ -164,6 +166,69 @@ function fmtK(n) {
   return n >= 1000 ? Math.round(n / 1000) + 'K' : n + '';
 }
 
+// ── hover details ──────────────────────────────────────────
+// Hovering the session line or the sessions link shows what clicking would
+// open (the recap window, the sessions window) as a tooltip. Clicking still
+// opens the full window.
+const HOVER_MAX_CHARS = 600;
+const clip = (s, n = HOVER_MAX_CHARS) => (s && s.length > n ? s.slice(0, n - 1) + '…' : s || '');
+function agoText(ms) {
+  if (!ms) return '';
+  const m = Math.round((Date.now() - ms) / 60000);
+  if (m < 1) return 'just now';
+  if (m < 60) return `${m}m ago`;
+  const h = Math.floor(m / 60);
+  return h < 24 ? `${h}h ago` : `${Math.floor(h / 24)}d ago`;
+}
+const toMs = (t) => (typeof t === 'number' ? t : Date.parse(t) || null);
+
+function recapTooltip(r) {
+  if (!r) return 'No active Claude Code session';
+  const lines = [`${r.session || 'Unnamed session'} · ${r.project}`, ''];
+  if (r.recap && r.recap.text) {
+    lines.push(`Where you left off (${agoText(toMs(r.recap.at))}):`, clip(r.recap.text));
+  } else {
+    lines.push('No recap yet (Claude Code writes one when you come back after being away).');
+  }
+  if (r.lastPrompt && r.lastPrompt.text) {
+    lines.push('', `Last thing you asked (${agoText(toMs(r.lastPrompt.at))}):`, clip(r.lastPrompt.text, 300));
+  }
+  lines.push('', 'Click to open in a window');
+  return lines.join('\n');
+}
+
+function sessionsTooltip(d) {
+  if (!d) return 'Click to see all running Claude Code sessions';
+  const pct = (t) => (t != null ? ` · context ${Math.round((t / (ctxWindow * 0.8)) * 100)}%` : '');
+  const size = (b) => (b != null ? ` · jsonl ${fmtBytes(b)}` : '');
+  const lines = [];
+  const running = d.sessions || [];
+  lines.push(running.length ? `Running sessions (${running.length}):` : 'No Claude Code sessions running.');
+  for (const s of running) {
+    const flag = s.pinned ? ' [pinned]' : s.showing ? ' [in widget]' : '';
+    lines.push(`${s.status === 'busy' ? '●' : '○'} ${s.name || 'Unnamed session'} · ${s.project}${flag}`);
+    lines.push(`   ${s.host}${pct(s.tokens)}${size(s.bytes)}${s.lastActive ? ` · active ${agoText(s.lastActive)}` : ''}`);
+  }
+  const bg = d.background || [];
+  if (bg.length) {
+    lines.push('', `Bots & scripts (${bg.length}):`);
+    for (const s of bg) {
+      lines.push(`${s.status === 'busy' ? '●' : '○'} ${s.name || s.project} · ${s.prompts} messages`);
+      lines.push(`   last reply ${agoText(s.lastActive)}${pct(s.tokens)}${size(s.bytes)}`);
+    }
+  }
+  lines.push('', 'Click to open in a window (and pin a session)');
+  return lines.join('\n');
+}
+
+let hoverFetchedAt = 0;
+function refreshHoverInfo(force) {
+  if (!force && Date.now() - hoverFetchedAt < 10000) return;
+  hoverFetchedAt = Date.now();
+  window.usage.recap().then((r) => { $('ctx-where-text').title = recapTooltip(r); }).catch(() => {});
+  window.usage.sessions().then((d) => { $('ctx-sessions').title = sessionsTooltip(d); }).catch(() => {});
+}
+
 function renderContext(c) {
   lastCtx = c;
   if (!c || !c.tokens) {
@@ -192,15 +257,70 @@ function renderContext(c) {
   const where = (c.session ? `${c.project} · ${c.session}` : c.project) + (stale ? ' · idle' : '');
   $('ctx-where').classList.remove('hidden');
   $('ctx-where-text').textContent = where;
-  $('ctx-where-text').title = `${where}\nClick to see where you left off`;
+  refreshHoverInfo();
   // The link doubles as the pin indicator, since a long project/session
   // name can push anything appended to the text out of view.
   const others = (c.runningSessions || 0) - 1;
   $('ctx-sessions').textContent = c.pinned ? 'pinned' : others > 0 ? `+${others} more` : 'sessions';
+  updateSummaries();
 }
 
 $('ctx-where-text').addEventListener('click', () => window.usage.openRecap());
+// ── collapsible sections ───────────────────────────────────
+// Folded sections are remembered per section; a folded header shows a
+// one-line summary so the numbers are still there at a glance.
+const FOLDED_KEY = 'foldedSections';
+let folded = [];
+try { folded = JSON.parse(localStorage.getItem(FOLDED_KEY) || '[]'); } catch {}
+if (!Array.isArray(folded)) folded = [];
+
+for (const sec of document.querySelectorAll('.sec')) {
+  const name = sec.dataset.sec;
+  const head = sec.querySelector('.sec-head');
+  const apply = (isFolded) => {
+    sec.classList.toggle('collapsed', isFolded);
+    head.setAttribute('aria-expanded', String(!isFolded));
+    head.title = isFolded ? 'Show' : 'Hide';
+  };
+  apply(folded.includes(name));
+  head.addEventListener('click', () => {
+    const isFolded = !sec.classList.contains('collapsed');
+    folded = isFolded ? [...new Set([...folded, name])] : folded.filter(n => n !== name);
+    try { localStorage.setItem(FOLDED_KEY, JSON.stringify(folded)); } catch {}
+    apply(isFolded);
+  });
+}
+
+let lastBreakdown = [];
+function updateSummaries() {
+  const txt = (id) => ($(id).textContent || '').trim();
+  $('sum-ctx').textContent = txt('pct-ctx') === '—' ? '' : txt('pct-ctx');
+  $('sum-limits').textContent = `5h ${txt('pct-5h')} · wk ${txt('pct-wk')}`;
+  const resets = $('resets-val');
+  $('sum-extra').textContent = resets.classList.contains('good')
+    ? `reset: ${txt('resets-val')}`
+    : `spend ${txt('extra-spent')} · bal ${txt('extra-balance')}`;
+  $('sum-ac').textContent = !$('ac-enabled').checked ? 'off'
+    : $('ac-agents').checked ? 'on · resumes agents' : 'on';
+  const top = lastBreakdown.slice().sort((a, b) => (b.percent || 0) - (a.percent || 0))[0];
+  $('sum-breakdown').textContent = top ? `${top.name || top.key} ${Math.round(top.percent || 0)}%` : '';
+}
+
+// Size the window to the card. Rows come and go (Resets, Auto Continue, the
+// breakdown), and a fixed height either clips them or leaves a scroll bar.
+let fittedHeight = 0;
+function fitWindow() {
+  const h = Math.ceil($('card').getBoundingClientRect().height);
+  if (h <= 0 || Math.abs(h - fittedHeight) <= 1) return; // only real changes
+  fittedHeight = h;
+  window.usage.fitHeight(h);
+}
+new ResizeObserver(fitWindow).observe($('card'));
+
 $('ctx-sessions').addEventListener('click', () => window.usage.openSessions());
+// Pointing at either one refreshes its details if they're older than 10s.
+$('ctx-where-text').addEventListener('mouseenter', () => refreshHoverInfo());
+$('ctx-sessions').addEventListener('mouseenter', () => refreshHoverInfo());
 $('resets-val').addEventListener('click', () => window.usage.openUsagePage());
 $('ac-activity').addEventListener('click', () => window.usage.autoContinue.openActivity());
 
@@ -235,6 +355,7 @@ function renderAutoContinue(state) {
   $('ac-enabled').checked = !!state.enabled;
   $('ac-agents').checked = !!state.resume_agents;
   $('ac-agents-row').classList.toggle('off', !state.enabled);
+  updateSummaries();
   if (state.error) showError(state.error);
 }
 window.usage.autoContinue.get().then(renderAutoContinue);

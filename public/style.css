@@ -6,6 +6,9 @@ html, body {
   color: #e8e8ea;
   -webkit-user-select: none;
   user-select: none;
+  /* The window is sized to fit the card (see fitWindow in app.js), so there
+     is never anything to scroll. */
+  overflow: hidden;
 }
 
 #card {
@@ -62,7 +65,12 @@ html, body {
 .reset { font-size: 10px; opacity: 0.55; margin: 2px 0 0 64px; }
 .ctx-detail { cursor: pointer; -webkit-app-region: no-drag; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .ctx-detail:hover { opacity: 0.85; }
-.ctx-where { display: flex; align-items: baseline; gap: 4px; -webkit-app-region: no-drag; }
+/* The session line is dimmed like the other detail lines, but its link isn't:
+   dimming the whole row stacked on the link's own opacity made "+1 more"
+   too dark to read. */
+.ctx-where { display: flex; align-items: baseline; gap: 4px; -webkit-app-region: no-drag; opacity: 1; }
+.ctx-where .where-text { opacity: 0.55; }
+.ctx-where .link { color: #f2a488; opacity: 1; }
 .ctx-where.hidden { display: none; }
 .where-text { flex: 1; min-width: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; cursor: pointer; }
 .where-text:hover { text-decoration: underline; text-underline-offset: 2px; }
@@ -114,6 +122,44 @@ html, body {
 .switch input:checked + .slider { background: linear-gradient(90deg, #c8553d, #e89070); }
 .switch input:checked + .slider::before { transform: translateX(12px); }
 .switch input:focus-visible + .slider { outline: 1px solid rgba(255,255,255,0.5); outline-offset: 1px; }
+
+/* Collapsible sections. The header's summary only shows while folded, so an
+   open section doesn't repeat its own numbers. */
+.sec + .sec { border-top: 1px solid rgba(255,255,255,0.08); }
+.sec { padding: 4px 0 6px; }
+.sec-head {
+  display: flex;
+  align-items: baseline;
+  gap: 5px;
+  width: 100%;
+  background: none;
+  border: none;
+  padding: 2px 0;
+  color: inherit;
+  font: inherit;
+  cursor: pointer;
+  text-align: left;
+  -webkit-app-region: no-drag;
+}
+.chev { font-size: 9px; opacity: 0.5; width: 9px; flex: none; transition: transform 120ms ease; }
+.sec-title { font-size: 10px; letter-spacing: 0.3px; opacity: 0.5; flex: none; }
+.sec-head:hover .sec-title, .sec-head:hover .chev { opacity: 0.85; }
+.sec-head:focus-visible { outline: 1px solid rgba(255,255,255,0.4); outline-offset: 1px; border-radius: 3px; }
+.sec-sum {
+  display: none;
+  margin-left: auto;
+  font-size: 10px;
+  opacity: 0.75;
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  min-width: 0;
+}
+.sec.collapsed .chev { transform: rotate(-90deg); }
+.sec.collapsed .sec-body { display: none; }
+.sec.collapsed .sec-sum { display: block; }
+@media (prefers-reduced-motion: reduce) { .chev { transition: none; } }
 
 .status { font-size: 10px; opacity: 0.5; margin-top: 8px; text-align: center; }
 .version { font-size: 9px; opacity: 0.3; text-align: center; margin-top: 2px; font-variant-numeric: tabular-nums; }

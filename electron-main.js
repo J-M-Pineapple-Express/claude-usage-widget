@@ -52,6 +52,8 @@ async function hasAuth() {
   return cookies.some(c => c.name === 'sessionKey' || c.name === 'sessionKeyLC');
 }
 
+const WIDGET_WIDTH = 300;
+
 function createWidget() {
   if (widgetWin && !widgetWin.isDestroyed()) {
     if (widgetWin.isMinimized()) widgetWin.restore();
@@ -60,8 +62,8 @@ function createWidget() {
     return;
   }
   widgetWin = new BrowserWindow({
-    width: 300,
-    height: 440,
+    width: WIDGET_WIDTH,
+    height: 440, // starting guess; the page fits it to its content
     frame: false,
     transparent: true,
     backgroundColor: '#00000000',
@@ -794,7 +796,11 @@ const { StringDecoder } = require('string_decoder');
 function freshScan(file) {
   return { file, offset: 0, carry: '', customTitle: null, aiTitle: null, recap: null, lastPrompt: null };
 }
-let transcriptScan = freshScan(null);
+// One incremental scan per transcript, so the widget's session and the
+// Sessions window's expanded rows don't evict each other and rescan whole
+// multi-MB files. Oldest-used entry drops past SCAN_CACHE_MAX.
+const SCAN_CACHE_MAX = 12;
+const transcriptScans = new Map();
 
 // A user row that is something the person actually typed, as opposed to a
 // tool result, a slash-command echo, or an injected system note.
@@ -835,9 +841,16 @@ function scanLine(scan, line) {
 
 function scanTranscript(file) {
   let fd;
+  let transcriptScan = transcriptScans.get(file) || freshScan(file);
+  transcriptScans.delete(file); // re-insert below to mark it most recently used
+  transcriptScans.set(file, transcriptScan);
+  if (transcriptScans.size > SCAN_CACHE_MAX) transcriptScans.delete(transcriptScans.keys().next().value);
   try {
     const size = fs.statSync(file).size;
-    if (transcriptScan.file !== file || size < transcriptScan.offset) transcriptScan = freshScan(file);
+    if (size < transcriptScan.offset) {
+      transcriptScan = freshScan(file);
+      transcriptScans.set(file, transcriptScan);
+    }
     if (size === transcriptScan.offset) return transcriptScan;
     fd = fs.openSync(file, 'r');
     const decoder = new StringDecoder('utf8');
@@ -1132,8 +1145,16 @@ function listBackground(exclude) {
 
 // Everything the "Where you left off" window shows, for whichever session
 // the context bar is currently measuring.
-function sessionRecap() {
-  const t = currentTranscript();
+// With a sessionId, the recap for that session (the Sessions window's
+// expandable rows); without one, whichever session the widget is showing.
+function sessionRecap(sessionId) {
+  let t = null;
+  if (sessionId) {
+    const tp = transcriptFor(String(sessionId), null);
+    try { t = tp ? transcriptInfo(tp) : null; } catch { t = null; }
+  } else {
+    t = currentTranscript();
+  }
   if (!t) return null;
   const scan = scanTranscript(t.path);
   const cwd = launchCwd(t.path);
@@ -1248,7 +1269,7 @@ ipcMain.handle('app:version', () => APP_VERSION);
 ipcMain.handle('autocontinue:get', () => autoContinueState());
 ipcMain.handle('autocontinue:set', (_e, patch) => updateAutoContinue(patch || {}));
 ipcMain.handle('autocontinue:activity', () => autoContinueActivity());
-ipcMain.handle('session:recap', () => sessionRecap());
+ipcMain.handle('session:recap', (_e, sessionId) => sessionRecap(sessionId));
 ipcMain.handle('sessions:list', () => listSessions());
 ipcMain.handle('sessions:pin', (_e, sessionId) => {
   pinnedSessionId = sessionId || null;
@@ -1290,6 +1311,22 @@ function openPanel(name, { width, height, title }) {
 ipcMain.on('panel:recap', () => openPanel('recap', { width: 420, height: 420, title: 'Where you left off' }));
 ipcMain.on('panel:activity', () => openPanel('activity', { width: 440, height: 500, title: 'Auto Continue activity' }));
 ipcMain.on('panel:sessions', () => openPanel('sessions', { width: 480, height: 460, title: 'Claude Code sessions' }));
+// The widget reports its card height; fit the window to it (width is fixed).
+ipcMain.on('widget:fit', (_e, h) => {
+  if (!widgetWin || widgetWin.isDestroyed()) return;
+  const height = Math.max(200, Math.min(900, Math.round(Number(h) || 0)));
+  const b = widgetWin.getBounds();
+  // Display scaling rounds bounds by a few pixels (set 300x513, read back
+  // 302x515). Treat that as already fitted, or it resizes forever.
+  if (Math.abs(b.height - height) <= 4 && Math.abs(b.width - WIDGET_WIDTH) <= 4) return;
+  // setBounds rather than setContentSize: on a frameless transparent window
+  // Windows can report a bogus content width, and a non-resizable window
+  // ignores size changes on some platforms.
+  widgetWin.setResizable(true);
+  widgetWin.setBounds({ x: b.x, y: b.y, width: WIDGET_WIDTH, height });
+  widgetWin.setResizable(false);
+  if (DEBUG) log(`fit: ${b.width}x${b.height} -> ${WIDGET_WIDTH}x${height}`);
+});
 // Using a reset happens on claude.ai (it asks you to confirm), not here.
 ipcMain.on('usage:openPage', () => shell.openExternal('https://claude.ai/settings/usage'));
 ipcMain.handle('theme:accentColor', () => {
