@@ -125,6 +125,18 @@ function ctxColor(pct) {
   return pct < 40 ? '#3fb950' : pct < 70 ? '#d29922' : '#f85149';
 }
 
+// Transcript size, formatted and colored the same way as the Claude Code
+// status line: green under 12MB, yellow under 15MB, red beyond.
+function fmtBytes(b) {
+  if (b >= 1024 * 1024) return (b / (1024 * 1024)).toFixed(1) + 'MB';
+  if (b >= 1024) return Math.round(b / 1024) + 'KB';
+  return b + 'B';
+}
+function sizeColor(b) {
+  const mb = b / (1024 * 1024);
+  return mb < 12 ? '#3fb950' : mb < 15 ? '#d29922' : '#f85149';
+}
+
 function fmtK(n) {
   return n >= 1000 ? Math.round(n / 1000) + 'K' : n + '';
 }
@@ -135,6 +147,7 @@ function renderContext(c) {
     $('bar-ctx').style.width = '0%';
     $('pct-ctx').textContent = '—';
     $('ctx-detail').textContent = 'no active Claude Code session';
+    $('ctx-where').textContent = '';
     return;
   }
   const budget = Math.round(ctxWindow * 0.8);
@@ -144,9 +157,18 @@ function renderContext(c) {
   $('pct-ctx').textContent = Math.round(pct) + '%';
   const stale = Date.now() - (c.at || 0) > 10 * 60 * 1000;
   const win = ctxWindow >= 1000000 ? '1M' : fmtK(ctxWindow);
-  $('ctx-detail').textContent =
-    `${fmtK(c.tokens)} / ${fmtK(budget)} (${win} window) · ${c.project}` +
-    (stale ? ' · idle' : '');
+  const detail = $('ctx-detail');
+  detail.textContent = `${fmtK(c.tokens)} / ${fmtK(budget)} (${win} window)`;
+  if (c.bytes != null) {
+    detail.append(' · ');
+    const size = document.createElement('span');
+    size.textContent = `jsonl ${fmtBytes(c.bytes)}`;
+    size.style.color = sizeColor(c.bytes);
+    detail.append(size);
+  }
+  const where = (c.session ? `${c.project} · ${c.session}` : c.project) + (stale ? ' · idle' : '');
+  $('ctx-where').textContent = where;
+  $('ctx-where').title = where;
 }
 
 window.usage.onUpdate(render);

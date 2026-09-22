@@ -61,7 +61,7 @@ function createWidget() {
   }
   widgetWin = new BrowserWindow({
     width: 300,
-    height: 428,
+    height: 440,
     frame: false,
     transparent: true,
     backgroundColor: '#00000000',
@@ -666,20 +666,100 @@ function lastUsageInTail(file) {
   return null;
 }
 
+// The folder the session was launched in: the first cwd recorded in the
+// transcript. Later rows track wherever the session has cd'd to, but Claude
+// Code files the session under its launch folder, and that's the project.
+const launchCwdCache = new Map();
+function launchCwd(file) {
+  if (launchCwdCache.has(file)) return launchCwdCache.get(file);
+  let fd;
+  let cwd = null;
+  try {
+    const size = fs.statSync(file).size;
+    const readLen = Math.min(size, 262144);
+    fd = fs.openSync(file, 'r');
+    const buf = Buffer.alloc(readLen);
+    fs.readSync(fd, buf, 0, readLen, 0);
+    for (const line of buf.toString('utf8').split('\n')) {
+      if (!line.includes('"cwd"')) continue;
+      try {
+        const o = JSON.parse(line);
+        if (typeof o.cwd === 'string' && o.cwd) { cwd = o.cwd; break; }
+      } catch {}
+    }
+  } catch (e) {
+    log(`launch cwd read error: ${e.message}`);
+  } finally {
+    if (fd !== undefined) { try { fs.closeSync(fd); } catch {} }
+  }
+  if (cwd) launchCwdCache.set(file, cwd);
+  return cwd;
+}
+
+// Session name set with /rename, stored as a "custom-title" row that can sit
+// anywhere in a transcript (some run to tens of MB). Scan the file once, then
+// only the bytes appended since, so the 15 s poll stays cheap.
+const { StringDecoder } = require('string_decoder');
+let titleScan = { file: null, offset: 0, carry: '', title: null };
+
+function sessionTitle(file) {
+  let fd;
+  try {
+    const size = fs.statSync(file).size;
+    if (titleScan.file !== file || size < titleScan.offset) {
+      titleScan = { file, offset: 0, carry: '', title: null };
+    }
+    if (size === titleScan.offset) return titleScan.title;
+    fd = fs.openSync(file, 'r');
+    const decoder = new StringDecoder('utf8');
+    const chunk = Buffer.alloc(4 * 1024 * 1024);
+    let pos = titleScan.offset;
+    let carry = titleScan.carry;
+    while (pos < size) {
+      const n = fs.readSync(fd, chunk, 0, Math.min(chunk.length, size - pos), pos);
+      if (n <= 0) break;
+      pos += n;
+      const lines = (carry + decoder.write(chunk.subarray(0, n))).split('\n');
+      carry = lines.pop();
+      for (const line of lines) {
+        if (!line.includes('"custom-title"')) continue;
+        try {
+          const o = JSON.parse(line);
+          if (o.type === 'custom-title' && o.customTitle) titleScan.title = String(o.customTitle).trim();
+        } catch {}
+      }
+    }
+    titleScan.offset = pos;
+    titleScan.carry = carry;
+  } catch (e) {
+    log(`session title read error: ${e.message}`);
+  } finally {
+    if (fd !== undefined) { try { fs.closeSync(fd); } catch {} }
+  }
+  return titleScan.title;
+}
+
 function readClaudeContext() {
   try {
     const t = newestTranscript();
     if (!t) return null;
     const u = lastUsageInTail(t.path);
     if (!u) return null;
+    const cwd = launchCwd(t.path);
     const tokens =
       (u.input_tokens || 0) +
       (u.cache_creation_input_tokens || 0) +
       (u.cache_read_input_tokens || 0);
     if (!tokens) return null;
-    // Project label = trailing segment of the encoded "C--Users-...-projects-main" dir.
-    const project = t.dir.split('-').filter(Boolean).pop() || '?';
-    return { tokens, project, at: t.mtime };
+    // Project = the session's real folder name. The encoded directory name
+    // can't be decoded reliably (spaces and dashes both become "-"), so it's
+    // only a fallback when no row carries a cwd.
+    const project = cwd
+      ? path.basename(cwd.replace(/[\\/]+$/, '')) || cwd
+      : (t.dir.split('-').filter(Boolean).pop() || '?');
+    let bytes = null;
+    try { bytes = fs.statSync(t.path).size; } catch {}
+    return { tokens, project, session: sessionTitle(t.path), bytes, at: t.mtime };
   } catch (e) {
     log(`context read error: ${e.message}`);
     return null;

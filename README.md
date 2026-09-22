@@ -48,7 +48,7 @@ The widget stores its own cookies in an isolated Electron partition. It does **n
 
 ## What it shows
 
-- **Context**: how full your active Claude Code context window is, so you get a heads-up before it auto-compacts. Reads the most recently active transcript under `~/.claude/projects/` and updates every 15 s. Click the line under the bar to set your window size (200K / 500K / 1M); it measures against about 80% of that, where compaction kicks in. Green → yellow → red as you fill up.
+- **Context**: how full your active Claude Code context window is, so you get a heads-up before it auto-compacts. Reads the most recently active transcript under `~/.claude/projects/` and updates every 15 s. Click the line under the bar to set your window size (200K / 500K / 1M); it measures against about 80% of that, where compaction kicks in. Green → yellow → red as you fill up. The line under the bar also shows the transcript's size (`jsonl 4.7MB`, green under 12MB, yellow under 15MB, red above), and the line below that shows which project and session it's measuring, for example `Claude Command Center · Projects`.
 - **5-hour**: % of your current session window used, and when it resets.
 - **Weekly**: % of your weekly limit used, and the reset day and time.
 - **Spend**: usage credits spent this month against your monthly cap, or "off" if usage credits aren't enabled.

@@ -1,5 +1,21 @@
 # Changelog
 
+## v0.5.2 — 2026-09-22
+
+### Fixed
+- **Context row showed only the last word of the project name.** A project in
+  "Claude Command Center" showed up as "Center" because the name was guessed from
+  Claude Code's encoded folder name, where spaces and dashes both turn into `-`.
+  It now reads the folder the session was launched in straight from the
+  transcript, so you get the full name.
+
+### Added
+- **Session name** next to the project (whatever you set with `/rename`), shown as
+  `Project · Session` on its own line under the context bar. Long names are cut
+  off with "…"; hover to see the whole thing.
+- **Transcript size** on the context line (`jsonl 4.7MB`), colored like the Claude
+  Code status line: green under 12MB, yellow under 15MB, red above.
+
 ## v0.5.1 — 2026-09-22
 
 **Auto Continue for macOS (untested).** The Auto Continue and Resume agents
