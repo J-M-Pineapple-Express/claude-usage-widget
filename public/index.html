@@ -49,6 +49,25 @@
       <span class="extra-label">Balance</span>
       <span id="extra-balance" class="extra-val">—</span>
     </div>
+    <div id="ac-wrap" class="hidden">
+      <div class="divider"></div>
+      <div class="extra-row ac-row"
+           title="When a usage limit resets, send the stalled Claude session a message telling it to continue where it left off.">
+        <span class="extra-label">Auto Continue</span>
+        <label class="switch">
+          <input type="checkbox" id="ac-enabled" />
+          <span class="slider"></span>
+        </label>
+      </div>
+      <div id="ac-agents-row" class="extra-row ac-row ac-sub"
+           title="On: the continue message also resumes any agents the limit interrupted. Off: it names them and waits for you.">
+        <span class="extra-label">Resume agents</span>
+        <label class="switch">
+          <input type="checkbox" id="ac-agents" />
+          <span class="slider"></span>
+        </label>
+      </div>
+    </div>
 
     <!-- Which products ate this week's allowance. Rows are built from the API
          response, so a new product category shows up without a code change. -->

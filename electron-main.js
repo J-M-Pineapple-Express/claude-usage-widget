@@ -2,6 +2,8 @@ const { app, BrowserWindow, ipcMain, session, Menu, Tray, nativeImage, systemPre
 const path = require('path');
 const fs = require('fs');
 const os = require('os');
+const { execFile } = require('child_process');
+const { syncHook } = require('./autocontinue-settings');
 
 const DEBUG = process.env.CLAUDE_USAGE_DEBUG === '1';
 const APP_VERSION = require('./package.json').version;
@@ -35,6 +37,7 @@ let widgetWin = null;
 let loginWin = null;
 let loginHandled = false;
 let tray = null;
+let trayMenu = null;
 let pollTimer = null;
 let ctxTimer = null;
 let lastData = null;
@@ -58,7 +61,7 @@ function createWidget() {
   }
   widgetWin = new BrowserWindow({
     width: 300,
-    height: 418,
+    height: process.platform === 'win32' ? 428 : 418,
     frame: false,
     transparent: true,
     backgroundColor: '#00000000',
@@ -242,6 +245,256 @@ function normalize(usage, prepaid) {
   };
 }
 
+// ── Auto Continue ──────────────────────────────────────────
+// A StopFailure(rate_limit) Claude Code hook (hooks/rate_limit_hook.py)
+// writes queue entries here whenever a session gets rate-limited. Once
+// this poller's own usage fetch shows BOTH windows below 100% again —
+// the only reliable "you're not immediately going to hit the wall again"
+// signal, regardless of which window actually caused the block — every
+// pending entry gets nudged: focused and sent a message saying to
+// continue where it left off.
+
+const CLAUDE_DIR = path.join(os.homedir(), '.claude');
+const AUTO_CONTINUE_QUEUE_PATH = path.join(CLAUDE_DIR, 'auto-continue-queue.json');
+const AUTO_CONTINUE_LOCK_PATH = path.join(CLAUDE_DIR, 'auto-continue-queue.lock');
+const AUTO_CONTINUE_CONFIG_PATH = path.join(CLAUDE_DIR, 'auto-continue.json');
+const CLAUDE_SETTINGS_PATH = path.join(CLAUDE_DIR, 'settings.json');
+// In a packaged build the scripts are unpacked next to app.asar (see
+// asarUnpack in package.json); PowerShell can't run files inside the archive.
+const HOOKS_DIR = path.join(__dirname, 'hooks').replace(`app.asar${path.sep}`, `app.asar.unpacked${path.sep}`);
+const AUTO_CONTINUE_NUDGE_SCRIPT = path.join(HOOKS_DIR, 'nudge_window.ps1');
+const AUTO_CONTINUE_HOOK_SCRIPT = path.join(HOOKS_DIR, 'rate_limit_hook.ps1');
+const AUTO_CONTINUE_BASE_MESSAGE = 'I had hit my token limit previously, please continue where we left off.';
+
+// enabled is the master switch. It defaults off because turning it on edits
+// the user's Claude Code settings (registers the hook). resume_agents also
+// defaults off: auto-resuming a batch of interrupted agents can spend most
+// of a fresh usage window before the user is back.
+function loadAutoContinueConfig() {
+    const cfg = { enabled: false, resume_agents: false };
+    try {
+        if (fs.existsSync(AUTO_CONTINUE_CONFIG_PATH)) {
+            Object.assign(cfg, JSON.parse(fs.readFileSync(AUTO_CONTINUE_CONFIG_PATH, 'utf8')));
+        }
+    } catch (e) {
+        log(`auto-continue: config read failed: ${e.message}`);
+    }
+    return cfg;
+}
+
+function saveAutoContinueConfig(cfg) {
+    try {
+        fs.writeFileSync(AUTO_CONTINUE_CONFIG_PATH, JSON.stringify(cfg, null, 2) + '\n');
+    } catch (e) {
+        log(`auto-continue: config write failed: ${e.message}`);
+    }
+}
+
+const AUTO_CONTINUE_SUPPORTED = process.platform === 'win32';
+
+let autoContinueError = null;
+
+function autoContinueState() {
+    const cfg = loadAutoContinueConfig();
+    return {
+        supported: AUTO_CONTINUE_SUPPORTED,
+        enabled: !!cfg.enabled,
+        resume_agents: !!cfg.resume_agents,
+        error: autoContinueError,
+    };
+}
+
+// Registers or removes the StopFailure hook in ~/.claude/settings.json.
+// Returns false (and records why) if the settings file can't be updated,
+// e.g. it isn't valid JSON; in that case the feature stays in its old state.
+function syncAutoContinueHook(install) {
+    try {
+        const r = syncHook(CLAUDE_SETTINGS_PATH, AUTO_CONTINUE_HOOK_SCRIPT, install);
+        if (r.changed) log(`auto-continue: hook ${install ? 'installed' : 'removed'} in ${CLAUDE_SETTINGS_PATH}`);
+        autoContinueError = null;
+        return true;
+    } catch (e) {
+        log(`auto-continue: could not update Claude settings: ${e.message}`);
+        autoContinueError = "Couldn't update ~/.claude/settings.json";
+        return false;
+    }
+}
+
+// Single write path for both settings, so the tray checkboxes and the
+// widget sliders can't drift apart.
+function updateAutoContinue(patch) {
+    const clean = {};
+    if ('enabled' in patch) clean.enabled = !!patch.enabled;
+    if ('resume_agents' in patch) clean.resume_agents = !!patch.resume_agents;
+    if ('enabled' in clean && AUTO_CONTINUE_SUPPORTED && !syncAutoContinueHook(clean.enabled)) {
+        delete clean.enabled;
+    }
+    saveAutoContinueConfig({ ...loadAutoContinueConfig(), ...clean });
+    log(`auto-continue: settings updated ${JSON.stringify(clean)}`);
+
+    // Turning Auto Continue off drops anything already queued; otherwise
+    // re-enabling later would fire a nudge for a limit hit hours ago.
+    if (clean.enabled === false) {
+        try {
+            withQueueLock(() => fs.writeFileSync(AUTO_CONTINUE_QUEUE_PATH, '[]'));
+        } catch (e) {
+            log(`auto-continue: queue clear failed: ${e.message}`);
+        }
+    }
+
+    const state = autoContinueState();
+    if (trayMenu) {
+        const en = trayMenu.getMenuItemById('auto-continue-enabled');
+        const ra = trayMenu.getMenuItemById('auto-continue-resume');
+        if (en) en.checked = state.enabled;
+        if (ra) { ra.checked = state.resume_agents; ra.enabled = state.enabled; }
+    }
+    if (widgetWin && !widgetWin.isDestroyed()) widgetWin.webContents.send('autocontinue:update', state);
+    return state;
+}
+
+function buildNudgeMessage(entry, cfg) {
+    const agents = (entry.failed_agents || []).map(a => a.agent_id).filter(Boolean);
+    if (!agents.length) return AUTO_CONTINUE_BASE_MESSAGE;
+    const list = agents.join(', ');
+    if (cfg.resume_agents) {
+        return `${AUTO_CONTINUE_BASE_MESSAGE} These agents were also stopped by the limit: ${list}. ` +
+            'Resume each of them before anything else: wake idle teammates with SendMessage so they keep ' +
+            'their context, and relaunch any that are gone using their original prompts.';
+    }
+    return `${AUTO_CONTINUE_BASE_MESSAGE} These agents were also stopped by the limit: ${list}. ` +
+        "Don't resume them unless I ask.";
+}
+
+// Same lock file the hook uses. Held only around read-merge-write, never
+// while a nudge is running, so hooks firing mid-nudge wait milliseconds.
+function withQueueLock(fn) {
+    const deadline = Date.now() + 5000;
+    for (;;) {
+        try {
+            fs.closeSync(fs.openSync(AUTO_CONTINUE_LOCK_PATH, 'wx'));
+            break;
+        } catch (e) {
+            if (e.code !== 'EEXIST') throw e;
+            try {
+                if (Date.now() - fs.statSync(AUTO_CONTINUE_LOCK_PATH).mtimeMs > 30000) {
+                    fs.unlinkSync(AUTO_CONTINUE_LOCK_PATH);
+                    continue;
+                }
+            } catch {}
+            if (Date.now() > deadline) throw new Error('auto-continue queue lock busy');
+            const until = Date.now() + 50;
+            while (Date.now() < until) {}
+        }
+    }
+    try {
+        return fn();
+    } finally {
+        try { fs.unlinkSync(AUTO_CONTINUE_LOCK_PATH); } catch {}
+    }
+}
+
+function loadAutoContinueQueue() {
+    try {
+        if (fs.existsSync(AUTO_CONTINUE_QUEUE_PATH)) {
+            return JSON.parse(fs.readFileSync(AUTO_CONTINUE_QUEUE_PATH, 'utf8'));
+        }
+    } catch (e) {
+        log(`auto-continue: queue read failed: ${e.message}`);
+    }
+    return [];
+}
+
+// Apply this poll's outcomes to the *current* file contents by entry id,
+// so entries or failed agents a hook added during the nudge survive.
+function applyQueueOutcomes(dropIds, attemptsById) {
+    try {
+        withQueueLock(() => {
+            const fresh = loadAutoContinueQueue()
+                .filter(e => !dropIds.has(e.id))
+                .map(e => (attemptsById.has(e.id) ? { ...e, attempts: attemptsById.get(e.id) } : e));
+            const tmp = AUTO_CONTINUE_QUEUE_PATH + '.tmp';
+            fs.writeFileSync(tmp, JSON.stringify(fresh, null, 2));
+            fs.renameSync(tmp, AUTO_CONTINUE_QUEUE_PATH);
+        });
+    } catch (e) {
+        log(`auto-continue: queue write failed: ${e.message}`);
+    }
+}
+
+// Retrying forever would mean a permanently-closed window's entry sits in
+// the queue and gets retried every poll indefinitely. Cap it — after this
+// many failed attempts (roughly this many minutes, since polls are ~60s
+// apart), drop the entry and log why.
+const MAX_NUDGE_ATTEMPTS = 30;
+
+function nudgeWindow(entry, message) {
+    return new Promise((resolve) => {
+        if (!entry.hwnd) {
+            log(`auto-continue: entry ${entry.id} has no window handle, dropping`);
+            resolve(true); // nothing to retry — treat as done so it gets dropped
+            return;
+        }
+        execFile('powershell.exe', [
+            '-NoProfile', '-ExecutionPolicy', 'Bypass', '-File', AUTO_CONTINUE_NUDGE_SCRIPT,
+            '-Hwnd', String(entry.hwnd), '-Message', message,
+        ], (err, stdout, stderr) => {
+            if (err) {
+                // Common cause: screen locked/screensaver active when the
+                // reset landed — Windows blocks foreground/input injection
+                // system-wide in that state. Leave the entry queued so the
+                // next poll (~60s) retries once the screen is unlocked.
+                log(`auto-continue: nudge attempt failed for ${entry.id} (${entry.window_title || 'unknown window'}): ${stderr || err.message}`);
+                resolve(false);
+            } else {
+                log(`auto-continue: nudged ${entry.id} (${entry.window_title || 'unknown window'})`);
+                resolve(true);
+            }
+        });
+    });
+}
+
+// `usage` is this poll's normalized data — reuses the same fetch pollOnce()
+// already made, no extra API calls just for this check.
+async function checkAutoContinueQueue(usage) {
+    if (!usage) return;
+    const fiveHourClear = usage.fiveHour.percent == null || usage.fiveHour.percent < 100;
+    const weeklyClear = usage.weekly.percent == null || usage.weekly.percent < 100;
+    if (!fiveHourClear || !weeklyClear) return;
+
+    const cfg = loadAutoContinueConfig();
+    if (!cfg.enabled) return;
+
+    let queue;
+    try {
+        queue = withQueueLock(loadAutoContinueQueue);
+    } catch (e) {
+        log(`auto-continue: queue read failed: ${e.message}`);
+        return;
+    }
+    if (!queue.length) return;
+
+    const dropIds = new Set();
+    const attemptsById = new Map();
+    for (const entry of queue) {
+        // Guard against nudging on a stale/cached percent read racing the
+        // rate-limit stop itself — require a little daylight between when
+        // it was queued and now.
+        if (Date.now() / 1000 - entry.queued_at < 30) continue;
+        const attempts = (entry.attempts || 0) + 1;
+        const succeeded = await nudgeWindow(entry, buildNudgeMessage(entry, cfg));
+        if (succeeded) {
+            dropIds.add(entry.id);
+        } else if (attempts >= MAX_NUDGE_ATTEMPTS) {
+            log(`auto-continue: giving up on ${entry.id} (${entry.window_title || 'unknown window'}) after ${attempts} failed attempts`);
+            dropIds.add(entry.id);
+        } else {
+            attemptsById.set(entry.id, attempts);
+        }
+    }
+    if (dropIds.size || attemptsById.size) applyQueueOutcomes(dropIds, attemptsById);
+}
+
 function handleSignedOut(status) {
   log(`poll: session expired (HTTP ${status})`);
   // A stale org id 403s the same way, so clear it before re-authenticating.
@@ -273,6 +526,7 @@ async function pollOnce() {
     reauthPrompted = false;
     log(`poll ok: 5h=${lastData.fiveHour.percent} weekly=${lastData.weekly.percent}`);
     if (widgetWin && !widgetWin.isDestroyed()) widgetWin.webContents.send('usage:update', lastData);
+    checkAutoContinueQueue(lastData);
   } catch (e) {
     if (e instanceof HttpError && (e.status === 401 || e.status === 403)) {
       handleSignedOut(e.status);
@@ -398,6 +652,25 @@ function createTray() {
       { type: 'separator' },
       { label: 'Show widget', click: () => createWidget() },
       { label: 'Refresh now', click: () => pollOnce() },
+      ...(process.platform === 'win32' ? [
+        { type: 'separator' },
+        {
+          id: 'auto-continue-enabled',
+          label: 'Auto Continue',
+          type: 'checkbox',
+          checked: autoContinueState().enabled,
+          click: (item) => updateAutoContinue({ enabled: item.checked }),
+        },
+        {
+          id: 'auto-continue-resume',
+          label: '    Resume interrupted agents',
+          type: 'checkbox',
+          checked: autoContinueState().resume_agents,
+          enabled: autoContinueState().enabled,
+          click: (item) => updateAutoContinue({ resume_agents: item.checked }),
+        },
+        { type: 'separator' },
+      ] : []),
       { label: 'Sign out / switch account', click: async () => {
           if (pollTimer) { clearInterval(pollTimer); pollTimer = null; }
           await widgetSession().clearStorageData();
@@ -407,6 +680,7 @@ function createTray() {
       { type: 'separator' },
       { label: 'Quit', click: () => { app.quit(); } },
     ]);
+    trayMenu = menu;
     tray.setContextMenu(menu);
     if (process.platform !== 'darwin') {
       tray.on('click', () => createWidget());
@@ -417,6 +691,8 @@ function createTray() {
 ipcMain.handle('usage:get', () => lastData);
 ipcMain.handle('context:get', () => lastContext);
 ipcMain.handle('app:version', () => APP_VERSION);
+ipcMain.handle('autocontinue:get', () => autoContinueState());
+ipcMain.handle('autocontinue:set', (_e, patch) => updateAutoContinue(patch || {}));
 ipcMain.handle('theme:accentColor', () => {
   if (process.platform !== 'win32') return null;
   try {
@@ -433,6 +709,9 @@ ipcMain.on('widget:hide', () => {
 app.whenReady().then(async () => {
   log(`app ready — v${APP_VERSION}`);
   if (process.platform === 'darwin' && app.dock) app.dock.hide();
+  // Keep the registered hook matching the setting and pointing at this
+  // install's script (an update or reinstall can move it). No-op if correct.
+  if (AUTO_CONTINUE_SUPPORTED) syncAutoContinueHook(loadAutoContinueConfig().enabled);
   createTray();
   startContextPolling(); // local file read — independent of claude.ai auth
   const authed = await hasAuth();

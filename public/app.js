@@ -172,6 +172,25 @@ $('refresh').addEventListener('click', () => {
 $('hide').addEventListener('click', () => window.usage.hide());
 $('close').addEventListener('click', () => window.usage.close());
 
+// Auto Continue sliders. Same settings as the tray checkboxes; either side
+// updates the other through the main process.
+function renderAutoContinue(state) {
+  if (!state || !state.supported) return;
+  $('ac-wrap').classList.remove('hidden');
+  $('ac-enabled').checked = !!state.enabled;
+  $('ac-agents').checked = !!state.resume_agents;
+  $('ac-agents-row').classList.toggle('off', !state.enabled);
+  if (state.error) showError(state.error);
+}
+window.usage.autoContinue.get().then(renderAutoContinue);
+window.usage.autoContinue.onChange(renderAutoContinue);
+$('ac-enabled').addEventListener('change', (e) => {
+  window.usage.autoContinue.set({ enabled: e.target.checked }).then(renderAutoContinue);
+});
+$('ac-agents').addEventListener('change', (e) => {
+  window.usage.autoContinue.set({ resume_agents: e.target.checked }).then(renderAutoContinue);
+});
+
 window.usage.accentColor().then((color) => {
   if (color) $('card').style.borderColor = color;
 });

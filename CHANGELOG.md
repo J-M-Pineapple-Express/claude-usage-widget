@@ -1,5 +1,47 @@
 # Changelog
 
+## v0.5.0 — 2026-09-22
+
+**Auto Continue (Windows).** Hit your 5-hour or weekly limit mid-task, walk away,
+and the widget picks the work back up for you. When the limit resets, it brings the
+stalled Claude Code window forward and sends:
+
+> I had hit my token limit previously, please continue where we left off.
+
+No more coming back hours later to a session that has been sitting idle since the
+reset.
+
+### Added
+- **Auto Continue switch** on the widget and in the tray menu. Off by default.
+  Turning it on registers a `StopFailure` hook (matcher `rate_limit`) in
+  `~/.claude/settings.json`; turning it off removes it. Your settings file is
+  backed up to `settings.json.auto-continue-backup` before every change, and a
+  settings file that isn't valid JSON is left alone.
+- **Resume agents switch.** If the limit also cut off subagents or teammates, the
+  continue message names them. With the switch on, it tells Claude to resume each
+  one (wake idle teammates with `SendMessage` so they keep their context, relaunch
+  any that are gone). With it off, it lists them and asks Claude to wait for you.
+  Off by default, since resuming a batch of agents can spend most of a fresh
+  window before you're back.
+- Works for sessions in any terminal, VS Code, or the Claude Code Desktop app. The
+  hook walks up from the Claude process to find the window it's running in.
+
+### How it behaves
+- It waits until **both** the 5-hour and weekly bars are under 100%, so it never
+  sends a message into a limit that's still in force.
+- If your screen is locked when the reset lands, Windows blocks sending keys to
+  other windows. The widget retries every minute and sends once you unlock.
+- One message per window, no matter how many agents in it hit the limit.
+- The message is pasted, not typed, so no characters get dropped. Your clipboard
+  is restored afterward (text only; an image on the clipboard would be replaced).
+- Turning Auto Continue off clears anything still waiting, so re-enabling it later
+  can't send a message about a limit you hit hours ago.
+
+### Notes
+- Windows only for now. On macOS the switches are hidden and everything else
+  works as before.
+- Needs only PowerShell, which ships with Windows. No Python or other installs.
+
 ## v0.4.0 — 2026-09-20
 
 **Reads the usage API instead of scraping the settings page.** The widget used to

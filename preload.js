@@ -12,4 +12,9 @@ contextBridge.exposeInMainWorld('usage', {
   hide: () => ipcRenderer.send('widget:hide'),
   close: () => ipcRenderer.send('widget:close'),
   accentColor: () => ipcRenderer.invoke('theme:accentColor'),
+  autoContinue: {
+    get: () => ipcRenderer.invoke('autocontinue:get'),
+    set: (patch) => ipcRenderer.invoke('autocontinue:set', patch),
+    onChange: (cb) => ipcRenderer.on('autocontinue:update', (_e, data) => cb(data)),
+  },
 });

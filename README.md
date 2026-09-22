@@ -54,12 +54,39 @@ The widget stores its own cookies in an isolated Electron partition. It does **n
 
 ---
 
+## Auto Continue (Windows)
+
+Hit your usage limit mid-task and walk away. When the limit resets, the widget
+brings the stalled Claude Code window forward and sends:
+
+> I had hit my token limit previously, please continue where we left off.
+
+**Turn it on** with the **Auto Continue** switch on the widget (or tray icon →
+**Auto Continue**). That registers a small hook in `~/.claude/settings.json` so
+Claude Code tells the widget when a session stops on a rate limit. Turning it off
+removes the hook. Your settings file is backed up to
+`settings.json.auto-continue-backup` before each change.
+
+**Resume agents** (off by default): if the limit also stopped subagents or
+teammates, the message names them. On, it asks Claude to resume them. Off, it
+lists them and waits for you. Resuming a batch of agents can use up a good chunk
+of a fresh window, so only turn this on if that's what you want while you're away.
+
+Good to know:
+- It only sends once both the 5-hour and weekly bars are under 100%.
+- Windows won't let apps send keys while your screen is locked, so a reset that
+  lands while you're locked gets sent right after you unlock.
+- The widget has to be running for it to work.
+- Windows only for now.
+
+---
+
 ## Controls
 
 - Drag by the title bar to move it.
 - **↻** — refresh now (it auto-refreshes every 5 min anyway).
 - **×** — quit.
-- Right-click the tray icon for **Refresh now** / **Sign out / switch account** / **Quit**.
+- Right-click the tray icon for **Refresh now**, **Auto Continue** (Windows), **Sign out / switch account**, and **Quit**.
 
 ---
 
