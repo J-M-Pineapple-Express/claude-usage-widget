@@ -77,7 +77,7 @@ Good to know:
 - Your OS won't let apps send keystrokes while the screen is locked, so a reset that lands while you're locked gets sent right after you unlock.
 - The widget has to be running for it to work.
 - The message is pasted in, and your clipboard is put back afterward.
-- **macOS support is new and hasn't been tested on a Mac yet.** You'll need to allow Claude Usage under **System Settings > Privacy & Security > Accessibility** (the widget asks when you turn the switch on), and you may get a one-time prompt to let it control System Events, Terminal, or iTerm.
+- **macOS support is new.** An automated test on a real Mac covers the hook, but the final paste into your window hasn't been tried by hand yet, so please report problems. You'll need to allow Claude Usage under **System Settings > Privacy & Security > Accessibility** (the widget asks when you turn the switch on), and you may get a one-time prompt to let it control System Events, Terminal, or iTerm.
 
 ---
 

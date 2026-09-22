@@ -22,6 +22,11 @@
 - An Auto Continue entry whose window couldn't be identified was dropped quietly.
   It's now recorded in the activity history as dropped.
 
+### Testing
+- Auto Continue on macOS now has an automated test that runs on a real Mac for
+  every change. It covers everything except the final paste into your window,
+  which still needs a hands-on check.
+
 ## v0.5.2 — 2026-09-22
 
 ### Fixed
@@ -40,9 +45,12 @@
 
 ## v0.5.1 — 2026-09-22
 
-**Auto Continue for macOS (untested).** The Auto Continue and Resume agents
-switches now appear on macOS too. This build has not been tested on a Mac yet.
-Please report anything that doesn't work.
+**Auto Continue for macOS.** The Auto Continue and Resume agents switches now
+appear on macOS too. An automated test on a real Mac covers the hook (finding
+the host app and terminal tab, merging agents, the settings.json entry) and
+checks the nudge script compiles. The last step, bringing the window forward
+and pasting, hasn't been tried by hand on a Mac yet. Please report anything
+that doesn't work.
 
 ### Added
 - **macOS hook.** Runs under the widget's own app binary in Node mode, so it
