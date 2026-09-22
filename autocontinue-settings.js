@@ -11,8 +11,13 @@ const path = require('path');
 
 const HOOK_MARKER = 'rate_limit_hook';
 
-function hookCommand(scriptPath) {
-  return `powershell.exe -NoProfile -ExecutionPolicy Bypass -File "${scriptPath}"`;
+// Windows runs the PowerShell hook; macOS runs the JS hook under the app's
+// own Electron binary in Node mode, so neither needs anything installed.
+function hookCommand(platform, hooksDir, execPath) {
+  if (platform === 'win32') {
+    return `powershell.exe -NoProfile -ExecutionPolicy Bypass -File "${path.join(hooksDir, 'rate_limit_hook.ps1')}"`;
+  }
+  return `ELECTRON_RUN_AS_NODE=1 "${execPath}" "${path.join(hooksDir, 'rate_limit_hook_mac.js')}"`;
 }
 
 function isOurs(group) {
@@ -41,13 +46,12 @@ function writeSettings(settingsPath, settings) {
 
 // Returns { changed, installed }. Writes only when something differs, so
 // calling it on every app start doesn't touch the file needlessly.
-function syncHook(settingsPath, scriptPath, wantInstalled) {
+function syncHook(settingsPath, command, wantInstalled) {
   const settings = readSettings(settingsPath);
   const hooks = settings.hooks || {};
   const groups = Array.isArray(hooks.StopFailure) ? hooks.StopFailure : [];
   const ours = groups.filter(isOurs);
   const others = groups.filter(g => !isOurs(g));
-  const command = hookCommand(scriptPath);
 
   const alreadyCorrect = wantInstalled
     ? ours.length === 1 && ours[0].matcher === 'rate_limit' &&

@@ -54,7 +54,7 @@ The widget stores its own cookies in an isolated Electron partition. It does **n
 
 ---
 
-## Auto Continue (Windows)
+## Auto Continue (Windows, macOS untested)
 
 Hit your usage limit mid-task and walk away. When the limit resets, the widget
 brings the stalled Claude Code window forward and sends:
@@ -77,7 +77,10 @@ Good to know:
 - Windows won't let apps send keys while your screen is locked, so a reset that
   lands while you're locked gets sent right after you unlock.
 - The widget has to be running for it to work.
-- Windows only for now.
+- **macOS support is new and hasn't been tested on a Mac yet.** You'll need to
+  allow Claude Usage under **System Settings > Privacy & Security >
+  Accessibility** (the widget asks when you turn the switch on), and you may get a
+  one-time prompt to let it control System Events, Terminal, or iTerm.
 
 ---
 
@@ -86,7 +89,7 @@ Good to know:
 - Drag by the title bar to move it.
 - **↻** — refresh now (it auto-refreshes every 5 min anyway).
 - **×** — quit.
-- Right-click the tray icon for **Refresh now**, **Auto Continue** (Windows), **Sign out / switch account**, and **Quit**.
+- Right-click the tray icon for **Refresh now**, **Auto Continue**, **Sign out / switch account**, and **Quit**.
 
 ---
 

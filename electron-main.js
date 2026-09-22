@@ -1,9 +1,9 @@
-const { app, BrowserWindow, ipcMain, session, Menu, Tray, nativeImage, systemPreferences, net } = require('electron');
+const { app, BrowserWindow, ipcMain, session, Menu, Tray, nativeImage, systemPreferences, net, clipboard } = require('electron');
 const path = require('path');
 const fs = require('fs');
 const os = require('os');
 const { execFile } = require('child_process');
-const { syncHook } = require('./autocontinue-settings');
+const { syncHook, hookCommand } = require('./autocontinue-settings');
 
 const DEBUG = process.env.CLAUDE_USAGE_DEBUG === '1';
 const APP_VERSION = require('./package.json').version;
@@ -61,7 +61,7 @@ function createWidget() {
   }
   widgetWin = new BrowserWindow({
     width: 300,
-    height: process.platform === 'win32' ? 428 : 418,
+    height: 428,
     frame: false,
     transparent: true,
     backgroundColor: '#00000000',
@@ -263,7 +263,7 @@ const CLAUDE_SETTINGS_PATH = path.join(CLAUDE_DIR, 'settings.json');
 // asarUnpack in package.json); PowerShell can't run files inside the archive.
 const HOOKS_DIR = path.join(__dirname, 'hooks').replace(`app.asar${path.sep}`, `app.asar.unpacked${path.sep}`);
 const AUTO_CONTINUE_NUDGE_SCRIPT = path.join(HOOKS_DIR, 'nudge_window.ps1');
-const AUTO_CONTINUE_HOOK_SCRIPT = path.join(HOOKS_DIR, 'rate_limit_hook.ps1');
+const AUTO_CONTINUE_NUDGE_SCRIPT_MAC = path.join(HOOKS_DIR, 'nudge_mac.js');
 const AUTO_CONTINUE_BASE_MESSAGE = 'I had hit my token limit previously, please continue where we left off.';
 
 // enabled is the master switch. It defaults off because turning it on edits
@@ -290,7 +290,7 @@ function saveAutoContinueConfig(cfg) {
     }
 }
 
-const AUTO_CONTINUE_SUPPORTED = process.platform === 'win32';
+const AUTO_CONTINUE_SUPPORTED = process.platform === 'win32' || process.platform === 'darwin';
 
 let autoContinueError = null;
 
@@ -309,7 +309,8 @@ function autoContinueState() {
 // e.g. it isn't valid JSON; in that case the feature stays in its old state.
 function syncAutoContinueHook(install) {
     try {
-        const r = syncHook(CLAUDE_SETTINGS_PATH, AUTO_CONTINUE_HOOK_SCRIPT, install);
+        const command = hookCommand(process.platform, HOOKS_DIR, process.execPath);
+        const r = syncHook(CLAUDE_SETTINGS_PATH, command, install);
         if (r.changed) log(`auto-continue: hook ${install ? 'installed' : 'removed'} in ${CLAUDE_SETTINGS_PATH}`);
         autoContinueError = null;
         return true;
@@ -328,6 +329,9 @@ function updateAutoContinue(patch) {
     if ('resume_agents' in patch) clean.resume_agents = !!patch.resume_agents;
     if ('enabled' in clean && AUTO_CONTINUE_SUPPORTED && !syncAutoContinueHook(clean.enabled)) {
         delete clean.enabled;
+    }
+    if (clean.enabled === true && !ensureMacPermissions()) {
+        autoContinueError = 'Allow Claude Usage in System Settings > Privacy & Security > Accessibility';
     }
     saveAutoContinueConfig({ ...loadAutoContinueConfig(), ...clean });
     log(`auto-continue: settings updated ${JSON.stringify(clean)}`);
@@ -429,6 +433,62 @@ function applyQueueOutcomes(dropIds, attemptsById) {
 const MAX_NUDGE_ATTEMPTS = 30;
 
 function nudgeWindow(entry, message) {
+    return process.platform === 'darwin' ? nudgeMac(entry, message) : nudgeWin(entry, message);
+}
+
+function macScreenLocked() {
+    return new Promise((resolve) => {
+        execFile('/usr/sbin/ioreg', ['-n', 'Root', '-d1'], (err, stdout) => {
+            resolve(!err && /"CGSSessionScreenIsLocked"\s*=\s*Yes/.test(stdout || ''));
+        });
+    });
+}
+
+// macOS: the message goes on the clipboard here (Electron can save and
+// restore images too, not just text), then nudge_mac.js brings the app
+// forward, picks the tab or window, and pastes.
+async function nudgeMac(entry, message) {
+    if (!entry.app_path) {
+        log(`auto-continue: entry ${entry.id} has no app path, dropping`);
+        return true;
+    }
+    if (await macScreenLocked()) {
+        log(`auto-continue: screen locked, will retry ${entry.id}`);
+        return false;
+    }
+    const prevImage = clipboard.readImage();
+    const prevText = clipboard.readText();
+    clipboard.writeText(message);
+    const folder = entry.cwd ? path.basename(entry.cwd) : '';
+    const ok = await new Promise((resolve) => {
+        execFile('/usr/bin/osascript', ['-l', 'JavaScript', AUTO_CONTINUE_NUDGE_SCRIPT_MAC, entry.app_path, entry.tty || '', folder],
+            { timeout: 20000 }, (err, stdout, stderr) => {
+                if (err) {
+                    log(`auto-continue: nudge attempt failed for ${entry.id} (${entry.window_title || 'unknown app'}): ${stderr || err.message}`);
+                    resolve(false);
+                } else {
+                    log(`auto-continue: nudged ${entry.id} (${entry.window_title || 'unknown app'})`);
+                    resolve(true);
+                }
+            });
+    });
+    if (!prevImage.isEmpty()) clipboard.writeImage(prevImage);
+    else clipboard.writeText(prevText);
+    return ok;
+}
+
+// macOS won't let an app send keystrokes to other apps without Accessibility
+// access. Ask when the user switches the feature on, while they're here,
+// rather than failing silently at reset time.
+function ensureMacPermissions() {
+    if (process.platform !== 'darwin') return true;
+    const trusted = systemPreferences.isTrustedAccessibilityClient(true);
+    // Touch System Events once so the Automation consent prompt appears now.
+    execFile('/usr/bin/osascript', ['-l', 'JavaScript', '-e', "Application('System Events').processes.length"], () => {});
+    return trusted;
+}
+
+function nudgeWin(entry, message) {
     return new Promise((resolve) => {
         if (!entry.hwnd) {
             log(`auto-continue: entry ${entry.id} has no window handle, dropping`);
@@ -652,7 +712,7 @@ function createTray() {
       { type: 'separator' },
       { label: 'Show widget', click: () => createWidget() },
       { label: 'Refresh now', click: () => pollOnce() },
-      ...(process.platform === 'win32' ? [
+      ...(AUTO_CONTINUE_SUPPORTED ? [
         { type: 'separator' },
         {
           id: 'auto-continue-enabled',

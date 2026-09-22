@@ -1,5 +1,31 @@
 # Changelog
 
+## v0.5.1 — 2026-09-22
+
+**Auto Continue for macOS (untested).** The Auto Continue and Resume agents
+switches now appear on macOS too. This build has not been tested on a Mac yet.
+Please report anything that doesn't work.
+
+### Added
+- **macOS hook.** Runs under the widget's own app binary in Node mode, so it
+  needs nothing installed. It finds the app hosting the Claude session (Terminal,
+  iTerm, VS Code, the Claude desktop app) and, for terminals, the exact tab.
+- **macOS nudge.** Brings that app forward, selects the matching Terminal or iTerm
+  tab (or raises the VS Code window for the project folder), then pastes the
+  continue message and presses Return. If the target app doesn't end up in front,
+  it doesn't paste, and it retries on the next poll.
+- **Permission prompt when you turn it on.** macOS only lets apps send keystrokes
+  to other apps after you allow it under **System Settings > Privacy & Security >
+  Accessibility**. The widget asks as soon as you flip the switch, so you aren't
+  surprised by a prompt when a reset lands. You may also see a one-time prompt
+  asking to let Claude Usage control System Events, Terminal, or iTerm.
+- On macOS the clipboard is saved and restored around the paste, images included.
+
+### Known limits (macOS)
+- A locked screen blocks keystrokes, same as Windows; it sends after you unlock.
+- For editors other than VS Code, the message goes to whichever of that app's
+  windows was last active.
+
 ## v0.5.0 — 2026-09-22
 
 **Auto Continue (Windows).** Hit your 5-hour or weekly limit mid-task, walk away,
