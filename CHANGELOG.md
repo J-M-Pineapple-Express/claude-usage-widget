@@ -1,5 +1,13 @@
 # Changelog
 
+## v0.10.1 — 2026-09-22
+
+### Fixed
+- Bot rows in the Sessions section ran past the widget's right edge.
+- The link to the Sessions window is now a clear **open sessions window ↗**
+  at the bottom of the list (hover it for the full list), next to the
+  accordion rows.
+
 ## v0.10.0 — 2026-09-22
 
 ### Added

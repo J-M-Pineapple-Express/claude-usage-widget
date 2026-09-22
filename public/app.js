@@ -327,6 +327,10 @@ function renderSessionList(d) {
       list.append(row);
     }
   }
+  const win = el('button', 'link si-window', 'open sessions window ↗');
+  win.title = sessionsTooltip(d);
+  win.addEventListener('click', () => window.usage.openSessions());
+  list.append(win);
   $('sum-sessions').textContent = `${running.length} running` + (bots.length ? ` · ${bots.length} bot${bots.length > 1 ? 's' : ''}` : '');
 }
 
@@ -336,7 +340,6 @@ function refreshHoverInfo(force) {
   hoverFetchedAt = Date.now();
   window.usage.recap().then((r) => { $('ctx-where-text').title = recapTooltip(r); }).catch(() => {});
   window.usage.sessions().then((d) => {
-    $('ctx-sessions').title = sessionsTooltip(d);
     renderSessionList(d);
     for (const id of sessOpen) loadSessRecap(id); // keep open recaps current
   }).catch(() => {});
@@ -371,7 +374,6 @@ function renderContext(c) {
   $('ctx-where').classList.remove('hidden');
   $('ctx-where-text').textContent = (c.pinned ? 'Pinned: ' : 'In widget: ') + where;
   refreshHoverInfo();
-  $('ctx-sessions').textContent = 'window ↗';
   updateSummaries();
 }
 
@@ -427,10 +429,8 @@ function fitWindow() {
 }
 new ResizeObserver(fitWindow).observe($('card'));
 
-$('ctx-sessions').addEventListener('click', () => window.usage.openSessions());
 // Pointing at either one refreshes its details if they're older than 10s.
 $('ctx-where-text').addEventListener('mouseenter', () => refreshHoverInfo());
-$('ctx-sessions').addEventListener('mouseenter', () => refreshHoverInfo());
 $('resets-val').addEventListener('click', () => window.usage.openUsagePage());
 $('ac-activity').addEventListener('click', () => window.usage.autoContinue.openActivity());
 
