@@ -209,6 +209,14 @@ function sessionsTooltip(d) {
     lines.push(`${s.status === 'busy' ? '●' : '○'} ${s.name || 'Unnamed session'} · ${s.project}${flag}`);
     lines.push(`   ${s.host}${pct(s.tokens)}${size(s.bytes)}${s.lastActive ? ` · active ${agoText(s.lastActive)}` : ''}`);
   }
+  const desk = d.desktop || [];
+  if (desk.length) {
+    lines.push('', `Claude Desktop (${desk.length}):`);
+    for (const s of desk) {
+      lines.push(`${s.status === 'busy' ? '●' : '○'} ${s.name || 'Untitled'} · ${s.host.replace('Claude Desktop · ', '')}`);
+      lines.push(`   ${s.project} · active ${agoText(s.lastActive)}${pct(s.tokens)}${size(s.bytes)}`);
+    }
+  }
   const bg = d.background || [];
   if (bg.length) {
     lines.push('', `Bots & scripts (${bg.length}):`);
@@ -299,7 +307,8 @@ function sessionItem(s) {
   const rec = el('button', 'link', 'recap ↗');
   rec.title = 'Open this session\'s recap in a window';
   rec.addEventListener('click', () => window.usage.pinSession(s.sessionId).then(() => window.usage.openRecap()));
-  actions.append(pin, rec);
+  // Desktop sessions have no running process for the context bar to follow.
+  if (s.kind) actions.append(rec); else actions.append(pin, rec);
   body.append(actions);
   item.append(body);
   return item;
@@ -312,8 +321,13 @@ function renderSessionList(d) {
   list.textContent = '';
   const running = d.sessions || [];
   const live = new Set(running.map(s => s.sessionId));
-  for (const id of [...sessOpen]) if (!live.has(id)) { sessOpen.delete(id); sessRecaps.delete(id); }
   for (const s of running) list.append(sessionItem(s));
+  const desk = d.desktop || [];
+  for (const id of [...sessOpen]) if (!live.has(id) && !desk.some(x => x.sessionId === id)) { sessOpen.delete(id); sessRecaps.delete(id); }
+  if (desk.length) {
+    list.append(el('div', 'si-group', 'Claude Desktop'));
+    for (const s of desk) list.append(sessionItem(s));
+  }
   const bots = d.background || [];
   if (bots.length) {
     list.append(el('div', 'si-group', 'Bots & scripts'));
@@ -331,7 +345,9 @@ function renderSessionList(d) {
   win.title = sessionsTooltip(d);
   win.addEventListener('click', () => window.usage.openSessions());
   list.append(win);
-  $('sum-sessions').textContent = `${running.length} running` + (bots.length ? ` · ${bots.length} bot${bots.length > 1 ? 's' : ''}` : '');
+  $('sum-sessions').textContent = `${running.length} running` +
+    (desk.length ? ` · ${desk.length} desktop` : '') +
+    (bots.length ? ` · ${bots.length} bot${bots.length > 1 ? 's' : ''}` : '');
 }
 
 let hoverFetchedAt = 0;

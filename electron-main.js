@@ -1047,7 +1047,10 @@ async function listSessions() {
   }).sort((a, b) => (b.lastActive || 0) - (a.lastActive || 0));
   let background = [];
   try { background = listBackground(new Set(running.map(s => s.sessionId))); } catch {}
-  return { pinned: pinnedSessionId, sessions, background };
+  let desktop = [];
+  try { desktop = listDesktop(new Set(running.map(s => s.sessionId))); } catch {}
+  for (const d of desktop) desktopTranscripts.set(d.sessionId, d.transcript);
+  return { pinned: pinnedSessionId, sessions, background, desktop };
 }
 
 // Background sessions: bots and scripts that drive Claude Code with `claude -p
@@ -1143,6 +1146,86 @@ function listBackground(exclude) {
   return out.sort((a, b) => b.lastActive - a.lastActive);
 }
 
+// Claude Desktop sessions (Code tab and Cowork). Desktop keeps one JSON
+// record per session; an idle one has no running process, so list any that
+// aren't archived and saw activity in the last day. Code transcripts live in
+// ~/.claude/projects; Cowork keeps its own inside the session's folder.
+const DESKTOP_DIR = process.platform === 'darwin'
+  ? path.join(os.homedir(), 'Library', 'Application Support', 'Claude')
+  : path.join(process.env.APPDATA || path.join(os.homedir(), 'AppData', 'Roaming'), 'Claude');
+const DESKTOP_WINDOW_MS = 24 * 60 * 60 * 1000;
+const desktopTranscripts = new Map(); // cliSessionId -> transcript path
+
+function desktopRecords(kind) {
+  const root = path.join(DESKTOP_DIR, kind === 'code' ? 'claude-code-sessions' : 'local-agent-mode-sessions');
+  const out = [];
+  const cutoff = Date.now() - DESKTOP_WINDOW_MS;
+  let accts = [];
+  try { accts = fs.readdirSync(root); } catch { return out; }
+  for (const a of accts) {
+    if (a === 'skills-plugin') continue;
+    let orgs = [];
+    try { orgs = fs.readdirSync(path.join(root, a)); } catch { continue; }
+    for (const o of orgs) {
+      const dir = path.join(root, a, o);
+      let files = [];
+      try { files = fs.readdirSync(dir).filter(f => /^local_.*\.json$/.test(f)); } catch { continue; }
+      for (const f of files) {
+        const p = path.join(dir, f);
+        try {
+          if (fs.statSync(p).mtimeMs < cutoff) continue; // records are rewritten on activity
+          const r = JSON.parse(fs.readFileSync(p, 'utf8'));
+          if (r.isArchived || !r.cliSessionId || (r.lastActivityAt || 0) < cutoff) continue;
+          out.push({ r, dir: path.join(dir, f.slice(0, -5)) });
+        } catch {}
+      }
+    }
+  }
+  return out;
+}
+
+function coworkTranscript(sessionDir, cliSessionId) {
+  const base = path.join(sessionDir, '.claude', 'projects');
+  try {
+    for (const d of fs.readdirSync(base)) {
+      const p = path.join(base, d, `${cliSessionId}.jsonl`);
+      if (fs.existsSync(p)) return p;
+    }
+  } catch {}
+  return null;
+}
+
+function listDesktop(exclude) {
+  const busy = busySessionIds();
+  const out = [];
+  for (const kind of ['code', 'cowork']) {
+    for (const { r, dir } of desktopRecords(kind)) {
+      if (exclude.has(r.cliSessionId)) continue; // already listed as running
+      const tp = kind === 'code' ? transcriptFor(r.cliSessionId, r.cwd) : coworkTranscript(dir, r.cliSessionId);
+      let tokens = null, bytes = null;
+      if (tp) {
+        const u = lastUsageInTail(tp);
+        if (u) tokens = (u.input_tokens || 0) + (u.cache_creation_input_tokens || 0) + (u.cache_read_input_tokens || 0);
+        try { bytes = fs.statSync(tp).size; } catch {}
+      }
+      const folder = kind === 'code' && r.cwd ? path.basename(String(r.cwd).replace(/[\\/]+$/, '')) : 'Cowork';
+      out.push({
+        sessionId: r.cliSessionId,
+        name: r.title || null,
+        project: folder,
+        host: kind === 'code' ? 'Claude Desktop · Code' : 'Claude Desktop · Cowork',
+        kind,
+        status: busy.has(r.cliSessionId) ? 'busy' : 'idle',
+        lastActive: r.lastActivityAt || null,
+        tokens,
+        bytes,
+        transcript: tp,
+      });
+    }
+  }
+  return out.sort((a, b) => (b.lastActive || 0) - (a.lastActive || 0));
+}
+
 // Everything the "Where you left off" window shows, for whichever session
 // the context bar is currently measuring.
 // With a sessionId, the recap for that session (the Sessions window's
@@ -1150,7 +1233,8 @@ function listBackground(exclude) {
 function sessionRecap(sessionId) {
   let t = null;
   if (sessionId) {
-    const tp = transcriptFor(String(sessionId), null);
+    // Cowork transcripts live outside ~/.claude/projects; listDesktop notes them.
+    const tp = desktopTranscripts.get(String(sessionId)) || transcriptFor(String(sessionId), null);
     try { t = tp ? transcriptInfo(tp) : null; } catch { t = null; }
   } else {
     t = currentTranscript();

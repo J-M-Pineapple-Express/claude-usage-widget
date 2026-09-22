@@ -1,5 +1,14 @@
 # Changelog
 
+## v0.11.0 — 2026-09-22
+
+### Added
+- **Claude Desktop sessions.** The Sessions section and the Sessions window
+  now list Claude Desktop Code and Cowork sessions that aren't archived and
+  were active in the last day, with context %, transcript size and an
+  expandable recap. Read from Desktop's own session records (Windows:
+  `%APPDATA%\Claude`; Mac: `~/Library/Application Support/Claude`).
+
 ## v0.10.1 — 2026-09-22
 
 ### Fixed

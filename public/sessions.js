@@ -125,8 +125,9 @@ function backgroundRow(s) {
   top.append(dot, el('span', 'sess-name', s.name || s.project), el('span', 'sess-project', s.name ? s.project : ''));
 
   const meta = el('div', 'sess-meta');
-  meta.append(el('span', null, s.host), el('span', null, `${s.prompts} messages`));
-  if (s.lastActive) meta.append(el('span', null, `last reply ${ago(s.lastActive)}`));
+  meta.append(el('span', null, s.host));
+  if (s.prompts != null) meta.append(el('span', null, `${s.prompts} messages`));
+  if (s.lastActive) meta.append(el('span', null, `${s.prompts != null ? 'last reply' : 'active'} ${ago(s.lastActive)}`));
 
   const stats = el('div', 'sess-stats');
   if (s.tokens != null) {
@@ -165,6 +166,26 @@ function render(data) {
   }
   for (const s of data.sessions) list.append(sessionRow(s));
 
+  const desk = $('desktop');
+  desk.textContent = '';
+  const dRows = data.desktop || [];
+  $('desk-section').hidden = !dRows.length;
+  for (const s of dRows) {
+    const row = backgroundRow({ ...s, prompts: null });
+    // Desktop rows expand to the recap like running sessions do.
+    const open = expanded.has(s.sessionId);
+    const link = el('button', 'link', `where I left off ${open ? '▴' : '▾'}`);
+    link.addEventListener('click', (e) => {
+      e.stopPropagation();
+      if (expanded.has(s.sessionId)) expanded.delete(s.sessionId);
+      else { expanded.add(s.sessionId); loadRecap(s.sessionId); }
+      render(lastData);
+    });
+    row.querySelector('.sess-stats').append(link);
+    if (open) row.append(recapPanel(s.sessionId));
+    desk.append(row);
+  }
+
   const bg = $('background');
   bg.textContent = '';
   const rows = data.background || [];
@@ -175,7 +196,7 @@ function render(data) {
 function refresh() {
   window.usage.sessions().then((d) => {
     // Keep open recaps current; forget ones for sessions that ended.
-    const live = new Set((d.sessions || []).map(s => s.sessionId));
+    const live = new Set([...(d.sessions || []), ...(d.desktop || [])].map(s => s.sessionId));
     for (const id of [...expanded]) {
       if (!live.has(id)) { expanded.delete(id); recaps.delete(id); } else loadRecap(id);
     }
