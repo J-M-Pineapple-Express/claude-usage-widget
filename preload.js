@@ -14,6 +14,9 @@ contextBridge.exposeInMainWorld('usage', {
   accentColor: () => ipcRenderer.invoke('theme:accentColor'),
   recap: () => ipcRenderer.invoke('session:recap'),
   openRecap: () => ipcRenderer.send('panel:recap'),
+  sessions: () => ipcRenderer.invoke('sessions:list'),
+  pinSession: (sessionId) => ipcRenderer.invoke('sessions:pin', sessionId),
+  openSessions: () => ipcRenderer.send('panel:sessions'),
   autoContinue: {
     activity: () => ipcRenderer.invoke('autocontinue:activity'),
     openActivity: () => ipcRenderer.send('panel:activity'),

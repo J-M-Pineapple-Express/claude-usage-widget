@@ -23,7 +23,10 @@
       <div class="pct" id="pct-ctx">—</div>
     </div>
     <div class="reset ctx-detail" id="ctx-detail" title="Claude Code context window fill — click to change the window size (200K / 500K / 1M)">waiting…</div>
-    <div class="reset ctx-where" id="ctx-where" title="Click to see where you left off"></div>
+    <div class="reset ctx-where hidden" id="ctx-where">
+      <span id="ctx-where-text" class="where-text" title="Click to see where you left off"></span>
+      <button id="ctx-sessions" class="link" title="All running Claude Code sessions">sessions</button>
+    </div>
 
     <div class="divider"></div>
 

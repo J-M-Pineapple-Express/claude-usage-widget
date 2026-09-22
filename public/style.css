@@ -62,8 +62,11 @@ html, body {
 .reset { font-size: 10px; opacity: 0.55; margin: 2px 0 0 64px; }
 .ctx-detail { cursor: pointer; -webkit-app-region: no-drag; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .ctx-detail:hover { opacity: 0.85; }
-.ctx-where { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; cursor: pointer; -webkit-app-region: no-drag; }
-.ctx-where:hover { opacity: 0.9; text-decoration: underline; text-underline-offset: 2px; }
+.ctx-where { display: flex; align-items: baseline; gap: 4px; -webkit-app-region: no-drag; }
+.ctx-where.hidden { display: none; }
+.where-text { flex: 1; min-width: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; cursor: pointer; }
+.where-text:hover { text-decoration: underline; text-underline-offset: 2px; }
+.ctx-where .link { flex: none; padding: 0; }
 .link {
   background: none;
   border: none;

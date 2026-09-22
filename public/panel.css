@@ -40,6 +40,38 @@ h2 {
 .ok { color: #3fb950; }
 .warn { color: #d29922; }
 .bad { color: #f85149; }
+.link {
+  background: none;
+  border: none;
+  padding: 0;
+  font: inherit;
+  color: #e89070;
+  cursor: pointer;
+}
+.link:hover { text-decoration: underline; text-underline-offset: 2px; }
+
+.sess {
+  background: rgba(255,255,255,0.04);
+  border: 1px solid rgba(255,255,255,0.07);
+  border-radius: 8px;
+  padding: 8px 11px;
+  cursor: pointer;
+}
+.sess + .sess { margin-top: 8px; }
+.sess:hover { border-color: rgba(255,255,255,0.18); }
+.sess.showing { border-color: rgba(232,144,112,0.55); }
+.sess-top { display: flex; align-items: center; gap: 6px; min-width: 0; }
+.sess-name { font-weight: 600; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.sess-project { opacity: 0.55; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; flex: 1; min-width: 0; }
+.sess-meta, .sess-stats { display: flex; flex-wrap: wrap; gap: 4px 12px; font-size: 11px; margin-top: 3px; }
+.sess-meta { opacity: 0.6; }
+.sess-stats { font-variant-numeric: tabular-nums; }
+.sess-stats .link { font-size: 11px; margin-left: auto; }
+.dim { opacity: 0.5; }
+.dot { width: 7px; height: 7px; border-radius: 50%; flex: none; }
+.dot.busy { background: #3fb950; box-shadow: 0 0 0 2px rgba(63,185,80,0.2); }
+.dot.idle { background: rgba(255,255,255,0.3); }
+
 .item + .item { margin-top: 8px; }
 .item .head { display: flex; justify-content: space-between; gap: 8px; font-size: 11px; margin-bottom: 4px; }
 .item .head .w { font-weight: 600; overflow-wrap: anywhere; }

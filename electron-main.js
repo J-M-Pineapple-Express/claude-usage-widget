@@ -846,10 +846,174 @@ function projectName(t, cwd) {
     : (t.dir.split('-').filter(Boolean).pop() || '?');
 }
 
+// ── Running sessions ───────────────────────────────────────
+// Claude Code keeps a small file per running process in ~/.claude/sessions
+// (<pid>.json: sessionId, launch cwd, name, entrypoint, busy/idle status).
+// The Sessions window lists the interactive ones: terminals, VS Code, and
+// the desktop app. Headless runs (claude -p, SDK scripts) are left out.
+
+const SESSIONS_DIR = path.join(os.homedir(), '.claude', 'sessions');
+const PROJECTS_DIR = path.join(os.homedir(), '.claude', 'projects');
+const transcriptPathCache = new Map(); // sessionId -> transcript path
+const hostCache = new Map();           // "pid:procStart" -> { title, process } | null
+let pinnedSessionId = null;
+
+function pidAlive(pid) {
+  try { process.kill(pid, 0); return true; } catch (e) { return e.code === 'EPERM'; }
+}
+
+function transcriptFor(sessionId, cwd) {
+  const cached = transcriptPathCache.get(sessionId);
+  if (cached && fs.existsSync(cached)) return cached;
+  let found = null;
+  const guess = cwd && path.join(PROJECTS_DIR, cwd.replace(/[^A-Za-z0-9]/g, '-'), `${sessionId}.jsonl`);
+  if (guess && fs.existsSync(guess)) found = guess;
+  if (!found) {
+    try {
+      for (const d of fs.readdirSync(PROJECTS_DIR)) {
+        const p = path.join(PROJECTS_DIR, d, `${sessionId}.jsonl`);
+        if (fs.existsSync(p)) { found = p; break; }
+      }
+    } catch {}
+  }
+  if (found) transcriptPathCache.set(sessionId, found);
+  return found;
+}
+
+function readRunningSessions() {
+  let files = [];
+  try { files = fs.readdirSync(SESSIONS_DIR).filter(f => /^\d+\.json$/.test(f)); } catch { return []; }
+  const out = [];
+  for (const f of files) {
+    try {
+      const s = JSON.parse(fs.readFileSync(path.join(SESSIONS_DIR, f), 'utf8'));
+      if (!s.sessionId || !s.pid || !pidAlive(s.pid)) continue;
+      if (s.kind !== 'interactive' && s.entrypoint !== 'claude-desktop') continue;
+      out.push(s);
+    } catch {}
+  }
+  return out;
+}
+
+function transcriptInfo(tp) {
+  const st = fs.statSync(tp);
+  return { path: tp, dir: path.basename(path.dirname(tp)), mtime: st.mtimeMs };
+}
+
+// Which transcript the context bar (and recap) follow: the pinned session if
+// it's still running, otherwise the running interactive session that wrote
+// most recently, otherwise the newest transcript on disk.
+function currentTranscript() {
+  const running = readRunningSessions();
+  if (pinnedSessionId) {
+    const s = running.find(x => x.sessionId === pinnedSessionId);
+    const tp = s && transcriptFor(s.sessionId, s.cwd);
+    if (tp) return { ...transcriptInfo(tp), pinned: true };
+    pinnedSessionId = null; // pinned session ended; go back to following the latest
+  }
+  let best = null;
+  for (const s of running) {
+    const tp = transcriptFor(s.sessionId, s.cwd);
+    if (!tp) continue;
+    try {
+      const info = transcriptInfo(tp);
+      if (!best || info.mtime > best.mtime) best = info;
+    } catch {}
+  }
+  return best || newestTranscript();
+}
+
+function lookupHosts(pids) {
+  return new Promise((resolve) => {
+    if (!pids.length) return resolve({});
+    if (process.platform === 'win32') {
+      execFile('powershell.exe', [
+        '-NoProfile', '-ExecutionPolicy', 'Bypass', '-File', path.join(HOOKS_DIR, 'find_host.ps1'),
+        '-Pids', pids.join(','),
+      ], { timeout: 20000 }, (err, stdout) => {
+        try { resolve(JSON.parse(stdout)); } catch { resolve({}); }
+      });
+    } else if (process.platform === 'darwin') {
+      execFile('/bin/ps', ['-A', '-o', 'pid=,ppid=,comm='], (err, stdout) => {
+        const procs = new Map();
+        for (const line of (stdout || '').split('\n')) {
+          const m = line.match(/^\s*(\d+)\s+(\d+)\s+(.*)$/);
+          if (m) procs.set(Number(m[1]), { ppid: Number(m[2]), comm: m[3] });
+        }
+        const res = {};
+        for (const pid of pids) {
+          let p = pid;
+          let hit = null;
+          for (let i = 0; i < 40 && p > 1; i++) {
+            const pr = procs.get(p);
+            if (!pr) break;
+            const bundle = pr.comm.match(/^(.*?\.app)\//);
+            if (bundle) {
+              const name = path.basename(bundle[1], '.app');
+              hit = { title: name, process: name };
+              break;
+            }
+            p = pr.ppid;
+          }
+          res[pid] = hit;
+        }
+        resolve(res);
+      });
+    } else {
+      resolve({});
+    }
+  });
+}
+
+function hostLabel(s, h) {
+  if (s.entrypoint === 'claude-desktop') return 'Claude Desktop';
+  if (!h) return 'Terminal';
+  if (/visual studio code/i.test(h.title) || /^code$/i.test(h.process)) {
+    const ws = h.title.replace(/\s*-\s*Visual Studio Code.*$/i, '');
+    return ws && ws !== h.title ? `VS Code · ${ws}` : 'VS Code';
+  }
+  return h.title;
+}
+
+async function listSessions() {
+  const running = readRunningSessions();
+  const key = (s) => `${s.pid}:${s.procStart || ''}`;
+  const missing = running.filter(s => !hostCache.has(key(s)));
+  if (missing.length) {
+    const found = await lookupHosts(missing.map(s => s.pid));
+    for (const s of missing) hostCache.set(key(s), found[String(s.pid)] || null);
+  }
+  const current = currentTranscript();
+  const sessions = running.map((s) => {
+    const tp = transcriptFor(s.sessionId, s.cwd);
+    let tokens = null;
+    let bytes = null;
+    let mtime = null;
+    if (tp) {
+      const u = lastUsageInTail(tp);
+      if (u) tokens = (u.input_tokens || 0) + (u.cache_creation_input_tokens || 0) + (u.cache_read_input_tokens || 0);
+      try { const st = fs.statSync(tp); bytes = st.size; mtime = st.mtimeMs; } catch {}
+    }
+    return {
+      sessionId: s.sessionId,
+      name: s.name || null,
+      project: s.cwd ? path.basename(String(s.cwd).replace(/[\\/]+$/, '')) : '?',
+      host: hostLabel(s, hostCache.get(key(s))),
+      status: s.status || null,
+      lastActive: mtime || s.updatedAt || null,
+      tokens,
+      bytes,
+      pinned: pinnedSessionId === s.sessionId,
+      showing: !!(current && tp && current.path === tp),
+    };
+  }).sort((a, b) => (b.lastActive || 0) - (a.lastActive || 0));
+  return { pinned: pinnedSessionId, sessions };
+}
+
 // Everything the "Where you left off" window shows, for whichever session
 // the context bar is currently measuring.
 function sessionRecap() {
-  const t = newestTranscript();
+  const t = currentTranscript();
   if (!t) return null;
   const scan = scanTranscript(t.path);
   const cwd = launchCwd(t.path);
@@ -866,7 +1030,7 @@ function sessionRecap() {
 
 function readClaudeContext() {
   try {
-    const t = newestTranscript();
+    const t = currentTranscript();
     if (!t) return null;
     const u = lastUsageInTail(t.path);
     if (!u) return null;
@@ -887,6 +1051,8 @@ function readClaudeContext() {
       hasRecap: !!(scan.recap || scan.lastPrompt),
       bytes,
       at: t.mtime,
+      pinned: !!t.pinned,
+      runningSessions: readRunningSessions().length,
     };
   } catch (e) {
     log(`context read error: ${e.message}`);
@@ -963,6 +1129,12 @@ ipcMain.handle('autocontinue:get', () => autoContinueState());
 ipcMain.handle('autocontinue:set', (_e, patch) => updateAutoContinue(patch || {}));
 ipcMain.handle('autocontinue:activity', () => autoContinueActivity());
 ipcMain.handle('session:recap', () => sessionRecap());
+ipcMain.handle('sessions:list', () => listSessions());
+ipcMain.handle('sessions:pin', (_e, sessionId) => {
+  pinnedSessionId = sessionId || null;
+  pushContext();
+  return listSessions();
+});
 
 // Small secondary windows (recap, Auto Continue activity). One of each at a
 // time; opening again just brings the existing one forward.
@@ -985,6 +1157,9 @@ function openPanel(name, { width, height, title }) {
       preload: path.join(__dirname, 'preload.js'),
       contextIsolation: true,
       nodeIntegration: false,
+      // Same partition as the widget so panels share its localStorage
+      // (e.g. the context window size the user picked).
+      session: widgetSession(),
     },
   });
   win.setMenuBarVisibility(false);
@@ -994,6 +1169,7 @@ function openPanel(name, { width, height, title }) {
 }
 ipcMain.on('panel:recap', () => openPanel('recap', { width: 420, height: 420, title: 'Where you left off' }));
 ipcMain.on('panel:activity', () => openPanel('activity', { width: 440, height: 500, title: 'Auto Continue activity' }));
+ipcMain.on('panel:sessions', () => openPanel('sessions', { width: 480, height: 460, title: 'Claude Code sessions' }));
 ipcMain.handle('theme:accentColor', () => {
   if (process.platform !== 'win32') return null;
   try {

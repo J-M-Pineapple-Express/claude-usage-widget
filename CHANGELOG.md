@@ -1,5 +1,30 @@
 # Changelog
 
+## v0.7.0 — 2026-09-22
+
+**Multiple sessions.** If you run several Claude Code sessions at once (a few
+terminals, VS Code, the desktop app), the widget now knows about all of them.
+
+### Added
+- **Sessions window.** Click **sessions** (or **+2 more**) at the end of the
+  project/session line. It lists every running interactive session, read from
+  Claude Code's own records of running sessions:
+  - session name and project
+  - where it's running: the terminal, VS Code workspace, or Claude Desktop
+  - working or idle, and how long since it was last active
+  - context % and transcript size
+  - a **where I left off** link for its recap
+- **Pin a session.** Click a session in that window to show it in the widget's
+  context bar. The recap window follows the pin too. Click it again, or
+  **Follow latest**, to unpin. While pinned, the widget's link reads **pinned**.
+  If a pinned session ends, the widget goes back to following the latest one.
+
+### Changed
+- When nothing is pinned, the context bar follows the running session that was
+  active most recently. Before, it followed whichever transcript on disk changed
+  last, which could be a background `claude -p` run rather than a session you
+  were working in.
+
 ## v0.6.0 — 2026-09-22
 
 ### Added

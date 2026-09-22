@@ -147,7 +147,7 @@ function renderContext(c) {
     $('bar-ctx').style.width = '0%';
     $('pct-ctx').textContent = '—';
     $('ctx-detail').textContent = 'no active Claude Code session';
-    $('ctx-where').textContent = '';
+    $('ctx-where').classList.add('hidden');
     return;
   }
   const budget = Math.round(ctxWindow * 0.8);
@@ -167,11 +167,17 @@ function renderContext(c) {
     detail.append(size);
   }
   const where = (c.session ? `${c.project} · ${c.session}` : c.project) + (stale ? ' · idle' : '');
-  $('ctx-where').textContent = where;
-  $('ctx-where').title = `${where}\nClick to see where you left off`;
+  $('ctx-where').classList.remove('hidden');
+  $('ctx-where-text').textContent = where;
+  $('ctx-where-text').title = `${where}\nClick to see where you left off`;
+  // The link doubles as the pin indicator, since a long project/session
+  // name can push anything appended to the text out of view.
+  const others = (c.runningSessions || 0) - 1;
+  $('ctx-sessions').textContent = c.pinned ? 'pinned' : others > 0 ? `+${others} more` : 'sessions';
 }
 
-$('ctx-where').addEventListener('click', () => window.usage.openRecap());
+$('ctx-where-text').addEventListener('click', () => window.usage.openRecap());
+$('ctx-sessions').addEventListener('click', () => window.usage.openSessions());
 $('ac-activity').addEventListener('click', () => window.usage.autoContinue.openActivity());
 
 window.usage.onUpdate(render);
