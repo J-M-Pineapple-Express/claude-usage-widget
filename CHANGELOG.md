@@ -1,5 +1,24 @@
 # Changelog
 
+## v0.8.0 — 2026-09-22
+
+### Added
+- **Usage resets.** Anthropic now hands out one-off resets that refill your
+  5-hour and weekly limits when you choose to use one (for example, the Claude
+  Opus 5.5 launch reset for Pro and Max). A new **Resets** row under Balance
+  shows how many you have and when they expire ("1 available · until Oct 22"
+  in green), or "used" once you've spent them. Hover for each reset's name and
+  expiry; click to open claude.ai's usage page, where a reset is used. The row
+  stays hidden on accounts that aren't eligible. It comes from the same usage
+  request the widget already makes, so there's no extra call.
+
+### Developer
+- `CLAUDE_USAGE_DEBUG=1` also saves the raw usage response to
+  `last-usage-raw.json` in the app's data folder.
+- `CLAUDE_USAGE_SNIFF=1` loads claude.ai's usage page hidden and saves the API
+  calls it makes to `usage-page-api.json`, for finding the data behind
+  anything new on that page.
+
 ## v0.7.1 — 2026-09-22
 
 ### Added

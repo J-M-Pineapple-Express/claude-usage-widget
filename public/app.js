@@ -69,6 +69,28 @@ function renderBreakdown(rows) {
   }
 }
 
+// Usage resets from Anthropic (claude.ai's "Resets" section). Hidden unless
+// the account is eligible; click opens claude.ai, where a reset is used.
+function renderResets(r) {
+  const row = $('resets-row');
+  const val = $('resets-val');
+  if (!r) { row.classList.add('hidden'); return; }
+  row.classList.remove('hidden');
+  const day = (iso) => iso ? new Date(iso).toLocaleDateString(undefined, { month: 'short', day: 'numeric' }) : null;
+  val.classList.toggle('good', r.left > 0);
+  val.classList.toggle('dim', r.left === 0);
+  if (r.left > 0) {
+    const until = day(r.endsAt);
+    val.textContent = `${r.left} available` + (until ? ` · until ${until}` : '');
+  } else {
+    val.textContent = r.grants.length ? 'used' : 'none right now';
+  }
+  val.title = (r.grants.length
+    ? r.grants.map(g => `${g.label}: ${g.left} of ${g.total} left` + (g.endsAt ? `, ends ${day(g.endsAt)}` : '') + (g.paused ? ' (paused)' : '')).join('\n')
+    : 'A reset refills your 5-hour and weekly limits when you choose to use it.')
+    + '\nClick to open claude.ai usage.';
+}
+
 function render(data) {
   if (!data) return;
   const fh = data.fiveHour || {};
@@ -92,6 +114,7 @@ function render(data) {
   }
   $('extra-balance').textContent = fmtMoney(data.balance) || '—';
 
+  renderResets(data.resets);
   renderBreakdown(data.breakdown);
 
   const t = new Date(data.at || Date.now());
@@ -178,6 +201,7 @@ function renderContext(c) {
 
 $('ctx-where-text').addEventListener('click', () => window.usage.openRecap());
 $('ctx-sessions').addEventListener('click', () => window.usage.openSessions());
+$('resets-val').addEventListener('click', () => window.usage.openUsagePage());
 $('ac-activity').addEventListener('click', () => window.usage.autoContinue.openActivity());
 
 window.usage.onUpdate(render);

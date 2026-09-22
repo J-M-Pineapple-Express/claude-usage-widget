@@ -84,6 +84,10 @@ html, body {
 .extra-label { opacity: 0.6; }
 .extra-val { font-variant-numeric: tabular-nums; opacity: 0.9; }
 #ac-wrap.hidden { display: none; }
+#resets-row.hidden { display: none; }
+.resets-val { font-size: 11px; font-variant-numeric: tabular-nums; color: inherit; padding: 0; }
+.resets-val.good { color: #3fb950; opacity: 1; font-weight: 600; }
+.resets-val.dim { opacity: 0.5; }
 .ac-row { align-items: center; margin-top: 2px; }
 .ac-sub { padding-left: 12px; }
 .ac-sub.off { opacity: 0.4; pointer-events: none; }

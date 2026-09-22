@@ -1,4 +1,4 @@
-const { app, BrowserWindow, ipcMain, session, Menu, Tray, nativeImage, systemPreferences, net, clipboard } = require('electron');
+const { app, BrowserWindow, ipcMain, session, Menu, Tray, nativeImage, systemPreferences, net, clipboard, shell } = require('electron');
 const path = require('path');
 const fs = require('fs');
 const os = require('os');
@@ -212,6 +212,24 @@ function money(m, currencyFallback) {
   };
 }
 
+// Usage resets ("Resets" on claude.ai's usage page): one-off grants from
+// Anthropic that refill the 5-hour and weekly limits when you choose to use
+// one. null when the account isn't eligible or the field isn't there.
+function normalizeResets(ce) {
+  if (!ce || !ce.eligible || !Array.isArray(ce.grants)) return null;
+  const grants = ce.grants.map(g => ({
+    label: g.label || 'Usage reset',
+    left: g.paused ? 0 : (g.resets_left || 0),
+    total: g.resets_total || 0,
+    endsAt: g.ends_at || null,
+    paused: !!g.paused,
+  }));
+  const open = grants.filter(g => g.left > 0);
+  const soonest = open.map(g => g.endsAt).filter(Boolean)
+    .sort((a, b) => Date.parse(a) - Date.parse(b))[0] || null;
+  return { left: open.reduce((n, g) => n + g.left, 0), endsAt: soonest, grants };
+}
+
 function normalize(usage, prepaid) {
   const fh = usage.five_hour || {};
   const wk = usage.seven_day || {};
@@ -237,6 +255,7 @@ function normalize(usage, prepaid) {
       limit: money(spend.limit),
     },
     balance,
+    resets: normalizeResets(usage.cedar_ember),
     // Which products ate the weekly allowance: Claude Code / Chats / Cowork / Other.
     breakdown: Array.isArray(bd.rows)
       ? bd.rows.map(r => ({ key: r.key, name: r.display_name, percent: r.percent }))
@@ -637,7 +656,9 @@ function handleSignedOut(status) {
 async function pollOnce() {
   try {
     const id = await resolveOrgId();
-    const usage = await apiGet(`${API_BASE}/organizations/${id}/usage`);
+    // cedar_ember=1 is how claude.ai's own usage page asks for usage resets
+    // (the "Resets" section); without it that field comes back null.
+    const usage = await apiGet(`${API_BASE}/organizations/${id}/usage?cedar_ember=1`);
     // Prepaid balance is a separate call and entirely optional — never let it
     // take down the numbers that actually matter.
     let prepaid = null;
@@ -645,6 +666,10 @@ async function pollOnce() {
       prepaid = await apiGet(`${API_BASE}/organizations/${id}/prepaid/credits`);
     } catch (e) {
       if (DEBUG) log(`prepaid fetch skipped: ${e.message}`);
+    }
+    // Debug: keep the raw response so new fields claude.ai adds can be found.
+    if (DEBUG) {
+      try { fs.writeFileSync(path.join(userData, 'last-usage-raw.json'), JSON.stringify({ usage, prepaid }, null, 2)); } catch {}
     }
     lastData = normalize(usage, prepaid);
     reauthPrompted = false;
@@ -1265,6 +1290,8 @@ function openPanel(name, { width, height, title }) {
 ipcMain.on('panel:recap', () => openPanel('recap', { width: 420, height: 420, title: 'Where you left off' }));
 ipcMain.on('panel:activity', () => openPanel('activity', { width: 440, height: 500, title: 'Auto Continue activity' }));
 ipcMain.on('panel:sessions', () => openPanel('sessions', { width: 480, height: 460, title: 'Claude Code sessions' }));
+// Using a reset happens on claude.ai (it asks you to confirm), not here.
+ipcMain.on('usage:openPage', () => shell.openExternal('https://claude.ai/settings/usage'));
 ipcMain.handle('theme:accentColor', () => {
   if (process.platform !== 'win32') return null;
   try {
@@ -1278,6 +1305,50 @@ ipcMain.on('widget:hide', () => {
   if (widgetWin && !widgetWin.isDestroyed()) widgetWin.hide();
 });
 
+// Dev aid (CLAUDE_USAGE_SNIFF=1): load claude.ai's usage page hidden and save
+// every API response it makes to userData/usage-page-api.json, for finding the
+// endpoint behind a section the widget doesn't show yet.
+function sniffUsagePage() {
+  const out = path.join(userData, 'usage-page-api.json');
+  const calls = [];
+  const win = new BrowserWindow({ show: false, width: 1200, height: 900, webPreferences: { partition: PARTITION } });
+  const dbg = win.webContents.debugger;
+  const pending = new Map();
+  try { dbg.attach('1.3'); } catch (e) { log(`sniff: attach failed ${e.message}`); return; }
+  dbg.on('message', async (_e, method, p) => {
+    if (method === 'Network.responseReceived' && ['XHR', 'Fetch', 'Document', 'Script'].includes(p.type)) {
+      pending.set(p.requestId, { url: p.response.url, status: p.response.status, type: p.type });
+    } else if (method === 'Network.loadingFinished' && pending.has(p.requestId)) {
+      const r = pending.get(p.requestId);
+      pending.delete(p.requestId);
+      try {
+        const body = (await dbg.sendCommand('Network.getResponseBody', { requestId: p.requestId })).body;
+        // Scripts: URL only (they're public and can be fetched to search).
+        if (r.type !== 'Script') r.body = body.slice(0, 20000);
+      } catch {}
+      calls.push(r);
+    }
+  });
+  const urls = [];
+  win.webContents.session.webRequest.onCompleted({ urls: ['https://claude.ai/*'] }, (d) => {
+    if (d.webContentsId === win.webContents.id) urls.push(`${d.statusCode} ${d.resourceType} ${d.url}`);
+  });
+  win.webContents.on('did-finish-load', () => log(`sniff: loaded ${win.webContents.getURL()}`));
+  win.webContents.on('did-fail-load', (_e, code, desc, url) => log(`sniff: failed ${code} ${desc} ${url}`));
+  // Network.enable doesn't resolve on a window that hasn't navigated yet, so
+  // don't gate the load on it.
+  dbg.sendCommand('Network.enable').catch((e) => log(`sniff: ${e.message}`));
+  win.loadURL('https://claude.ai/settings/usage').catch((e) => log(`sniff: load ${e.message}`));
+  setTimeout(() => {
+    try { fs.writeFileSync(path.join(userData, 'usage-page-urls.txt'), urls.join('\n')); } catch {}
+  }, 20000);
+  setTimeout(() => {
+    try { fs.writeFileSync(out, JSON.stringify(calls, null, 2)); } catch {}
+    log(`sniff: saved ${calls.length} API responses to ${out}`);
+    if (!win.isDestroyed()) win.destroy();
+  }, 20000);
+}
+
 app.whenReady().then(async () => {
   log(`app ready — v${APP_VERSION}`);
   if (process.platform === 'darwin' && app.dock) app.dock.hide();
@@ -1287,6 +1358,7 @@ app.whenReady().then(async () => {
   createTray();
   startContextPolling(); // local file read — independent of claude.ai auth
   const authed = await hasAuth();
+  if (authed && process.env.CLAUDE_USAGE_SNIFF === '1') sniffUsagePage();
   if (authed) {
     createWidget();
     startPolling();
