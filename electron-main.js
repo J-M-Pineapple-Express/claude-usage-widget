@@ -52,7 +52,42 @@ async function hasAuth() {
   return cookies.some(c => c.name === 'sessionKey' || c.name === 'sessionKeyLC');
 }
 
-const WIDGET_WIDTH = 300;
+const WIDGET_WIDTH = 300; // at 100%; the size setting scales it
+
+// Widget size. Scales the whole page (text, bars, spacing) with Electron's
+// zoom, and the window follows: width = 300 x scale, height = fitted content.
+// Works the same on macOS and Windows; picked from the tray/menu-bar icon or
+// with Cmd/Ctrl +, -, 0 while the widget is focused.
+const SIZES = [
+  { id: 'small', label: 'Small', scale: 0.85 },
+  { id: 'normal', label: 'Normal', scale: 1 },
+  { id: 'large', label: 'Large', scale: 1.2 },
+  { id: 'xl', label: 'Extra large', scale: 1.4 },
+];
+const prefsFile = path.join(userData, 'widget-prefs.json');
+function loadPrefs() { try { return JSON.parse(fs.readFileSync(prefsFile, 'utf8')) || {}; } catch { return {}; } }
+let widgetSize = SIZES.find(z => z.id === loadPrefs().size) || SIZES[1];
+let lastCardHeight = 0;
+const widgetWidth = () => Math.round(WIDGET_WIDTH * widgetSize.scale);
+
+function setWidgetSize(id) {
+  const next = SIZES.find(z => z.id === id);
+  if (!next || next === widgetSize) return;
+  widgetSize = next;
+  try { fs.writeFileSync(prefsFile, JSON.stringify({ ...loadPrefs(), size: id })); } catch {}
+  if (widgetWin && !widgetWin.isDestroyed()) {
+    widgetWin.webContents.setZoomFactor(widgetSize.scale);
+    if (lastCardHeight) fitWidget(lastCardHeight);
+  }
+  const item = trayMenu && trayMenu.getMenuItemById(`size-${id}`);
+  if (item) item.checked = true;
+}
+
+function stepWidgetSize(dir) {
+  const i = SIZES.indexOf(widgetSize);
+  const j = dir === 0 ? 1 : Math.max(0, Math.min(SIZES.length - 1, i + dir));
+  setWidgetSize(SIZES[j].id);
+}
 
 function createWidget() {
   if (widgetWin && !widgetWin.isDestroyed()) {
@@ -62,7 +97,7 @@ function createWidget() {
     return;
   }
   widgetWin = new BrowserWindow({
-    width: WIDGET_WIDTH,
+    width: widgetWidth(),
     height: 440, // starting guess; the page fits it to its content
     frame: false,
     transparent: true,
@@ -80,6 +115,14 @@ function createWidget() {
   });
   widgetWin.setAlwaysOnTop(true, 'floating');
   widgetWin.loadFile(path.join(__dirname, 'public', 'index.html'));
+  widgetWin.webContents.on('did-finish-load', () => widgetWin.webContents.setZoomFactor(widgetSize.scale));
+  // Cmd/Ctrl + = / - / 0 change the size, like zoom in any Mac or Windows app.
+  widgetWin.webContents.on('before-input-event', (e, input) => {
+    if (input.type !== 'keyDown' || !(input.meta || input.control)) return;
+    if (input.key === '=' || input.key === '+') { stepWidgetSize(1); e.preventDefault(); }
+    else if (input.key === '-') { stepWidgetSize(-1); e.preventDefault(); }
+    else if (input.key === '0') { stepWidgetSize(0); e.preventDefault(); }
+  });
   widgetWin.on('closed', () => { widgetWin = null; });
 }
 
@@ -1434,6 +1477,9 @@ function createTray() {
       { type: 'separator' },
       { label: 'Show widget', click: () => createWidget() },
       { label: 'Refresh now', click: () => pollOnce() },
+      { label: 'Size', submenu: SIZES.map(z => ({
+          id: `size-${z.id}`, label: z.label, type: 'radio', checked: z === widgetSize, click: () => setWidgetSize(z.id),
+        })) },
       ...(AUTO_CONTINUE_SUPPORTED ? [
         { type: 'separator' },
         {
@@ -1526,9 +1572,13 @@ ipcMain.on('panel:help', (_e, section) => openPanel('help', {
   hash: HELP_SECTIONS.includes(section) ? section : 'top',
 }));
 // The widget reports its card height; fit the window to it (width is fixed).
-ipcMain.on('widget:fit', (_e, h) => {
+ipcMain.on('widget:fit', (_e, h) => fitWidget(h));
+function fitWidget(h) {
   if (!widgetWin || widgetWin.isDestroyed()) return;
-  const height = Math.max(200, Math.min(900, Math.round(Number(h) || 0)));
+  lastCardHeight = Number(h) || 0;
+  // The page reports CSS pixels; zoom scales them to window pixels.
+  const WIDGET_WIDTH = widgetWidth();
+  const height = Math.max(200, Math.min(1400, Math.round(lastCardHeight * widgetSize.scale)));
   const b = widgetWin.getBounds();
   // Display scaling rounds bounds by a few pixels (set 300x513, read back
   // 302x515). Treat that as already fitted, or it resizes forever.
@@ -1540,7 +1590,7 @@ ipcMain.on('widget:fit', (_e, h) => {
   widgetWin.setBounds({ x: b.x, y: b.y, width: WIDGET_WIDTH, height });
   widgetWin.setResizable(false);
   if (DEBUG) log(`fit: ${b.width}x${b.height} -> ${WIDGET_WIDTH}x${height}`);
-});
+}
 ipcMain.handle('scheduled:list', async () => {
   try {
     const tasks = await listScheduled();

@@ -1,5 +1,14 @@
 # Changelog
 
+## v0.14.0 — 2026-09-22
+
+### Added
+- **Widget size.** Small, Normal, Large and Extra large (85–140%). Pick one
+  from the tray / menu-bar icon → **Size**, or press Cmd/Ctrl **+**, **−**,
+  **0** with the widget focused. Everything scales together, the window keeps
+  fitting its content, and the size is remembered. Works the same on macOS
+  and Windows.
+
 ## v0.13.0 — 2026-09-22
 
 ### Added
