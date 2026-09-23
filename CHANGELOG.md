@@ -1,5 +1,21 @@
 # Changelog
 
+## v0.12.0 — 2026-09-22
+
+### Added
+- **Chats in Sessions.** Claude chats and Claude Desktop's merged chats
+  (cloud Cowork sessions) active in the last day are listed in the Sessions
+  section and the Sessions window: working/idle, "needs you", last active.
+  Click one to open it on claude.ai. Archived and temporary chats are skipped.
+- **Scheduled tasks.** A **scheduled tasks ↗** link in the Sessions section
+  (with a count when something is new) opens a window listing your scheduled
+  Cowork tasks: next run, last run, number of runs, paused, and the same blue
+  "needs attention" dot Claude Desktop shows for unread or waiting runs. Click
+  a task to open its latest run.
+
+### Developer
+- `CLAUDE_USAGE_SNIFF_URL` points sniff mode at any claude.ai page.
+
 ## v0.11.0 — 2026-09-22
 
 ### Added

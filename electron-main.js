@@ -154,11 +154,12 @@ class HttpError extends Error {
 
 // Electron's net module sends the partition's cookies, so the session the user
 // signed into already authenticates the call — there's no token to manage.
-function apiGet(url) {
+function apiGet(url, headers = {}) {
   return new Promise((resolve, reject) => {
     const req = net.request({ method: 'GET', url, session: widgetSession(), useSessionCookies: true });
     req.setHeader('accept', 'application/json');
     req.setHeader('anthropic-client-platform', 'web_claude_ai');
+    for (const [k, v] of Object.entries(headers)) req.setHeader(k, v);
     let body = '';
     req.on('response', (res) => {
       res.on('data', (c) => { body += c.toString(); });
@@ -1050,7 +1051,9 @@ async function listSessions() {
   let desktop = [];
   try { desktop = listDesktop(new Set(running.map(s => s.sessionId))); } catch {}
   for (const d of desktop) desktopTranscripts.set(d.sessionId, d.transcript);
-  return { pinned: pinnedSessionId, sessions, background, desktop };
+  let chats = [];
+  try { chats = await listChats(); } catch {}
+  return { pinned: pinnedSessionId, sessions, background, desktop, chats };
 }
 
 // Background sessions: bots and scripts that drive Claude Code with `claude -p
@@ -1224,6 +1227,126 @@ function listDesktop(exclude) {
     }
   }
   return out.sort((a, b) => (b.lastActive || 0) - (a.lastActive || 0));
+}
+
+// Cloud Cowork sessions: Desktop chats and scheduled-task runs share this
+// list. One fetch a minute serves both.
+let coworkCache = { at: 0, items: [] };
+async function coworkSessions() {
+  if (Date.now() - coworkCache.at < CHATS_TTL_MS) return coworkCache.items;
+  coworkCache.at = Date.now();
+  const cs = await apiGet('https://claude.ai/v1/code/sessions?tags=cowork-remote&limit=100&include_trigger_sessions=true',
+    { 'anthropic-version': '2023-06-01' });
+  coworkCache.items = (cs && cs.data) || [];
+  return coworkCache.items;
+}
+
+// Scheduled Cowork tasks ("Scheduled" in Claude Desktop). The routines come
+// from cowork/scheduled_tasks; their runs are cloud sessions named
+// "⚡ <routine name>". A run that's unread or waiting on you is what Desktop
+// marks with a blue dot, so that's "needs attention" here.
+let scheduledCache = { at: 0, tasks: null };
+async function listScheduled() {
+  if (scheduledCache.tasks && Date.now() - scheduledCache.at < CHATS_TTL_MS) return scheduledCache.tasks;
+  scheduledCache.at = Date.now();
+  scheduledCache.tasks = await fetchScheduled();
+  return scheduledCache.tasks;
+}
+
+async function fetchScheduled() {
+  const id = await resolveOrgId();
+  const res = await apiGet(`${API_BASE}/organizations/${id}/cowork/scheduled_tasks`);
+  const triggers = (res && (res.data || res.scheduled_tasks)) || (Array.isArray(res) ? res : []);
+  let runs = [];
+  try { runs = (await coworkSessions()).filter(x => ((x.config || {}).origin) === 'scheduled_trigger'); } catch {}
+  const norm = (t) => String(t || '').replace(/^⚡\s*/, '').trim();
+  return triggers.map((t) => {
+    const mine = runs.filter(r => norm(r.title) === norm(t.name))
+      .sort((a, b) => (Date.parse(b.last_event_at || b.updated_at) || 0) - (Date.parse(a.last_event_at || a.updated_at) || 0));
+    const attention = mine.filter(r => r.unread || r.worker_status === 'requires_action');
+    const latest = mine[0];
+    return {
+      id: t.id,
+      name: t.name,
+      enabled: t.enabled !== false,
+      nextRunAt: t.next_run_at || null,
+      cron: t.cron_expression || t.cron || null,
+      runs: mine.length,
+      lastRunAt: latest ? (Date.parse(latest.last_event_at || latest.updated_at) || null) : null,
+      attention: attention.length,
+      waiting: mine.some(r => r.worker_status === 'requires_action'),
+      openId: (attention[0] || latest || {}).id || null,
+    };
+  }).sort((a, b) => (b.attention - a.attention) || ((b.lastRunAt || 0) - (a.lastRunAt || 0)));
+}
+
+// Claude chats (claude.ai / Desktop's Chat tab). These live on claude.ai, not
+// on disk, so ask the same conversation list the apps use, once a minute at
+// most, and keep the ones updated in the last day. No context % or recap:
+// chats don't expose token usage the way Claude Code transcripts do.
+const CHATS_TTL_MS = 60 * 1000;
+const CHATS_WINDOW_MS = 24 * 60 * 60 * 1000;
+let chatsCache = { at: 0, items: [] };
+let chatsShapeLogged = false;
+
+async function listChats() {
+  if (Date.now() - chatsCache.at < CHATS_TTL_MS) return chatsCache.items;
+  chatsCache.at = Date.now();
+  try {
+    const id = await resolveOrgId();
+    const res = await apiGet(`${API_BASE}/organizations/${id}/chat_conversations_v2?limit=20`);
+    const rows = Array.isArray(res) ? res : (res && (res.data || res.conversations || res.items)) || [];
+    if (!chatsShapeLogged) {
+      chatsShapeLogged = true;
+      log(`chats: ${rows.length} rows; keys ${rows[0] ? Object.keys(rows[0]).join(',') : '(none)'}`);
+      if (DEBUG) for (const c of rows.slice(0, 5)) {
+        log(`chat: ${JSON.stringify({ name: c.name, updated_at: c.updated_at, archived: c.is_archived, temp: c.is_temporary, live: c.live_status, platform: c.platform })}`);
+      }
+    }
+    const cutoff = Date.now() - CHATS_WINDOW_MS;
+    chatsCache.items = rows
+      .map(c => ({
+        sessionId: c.uuid || c.id,
+        name: c.name || c.title || 'Untitled chat',
+        lastActive: Date.parse(c.updated_at || c.updatedAt || c.created_at) || null,
+        model: c.model || null,
+        project: c.project && c.project.name ? c.project.name : null,
+        // live_status is set while a reply is being generated.
+        busy: !!c.live_status && !/idle|settled|done|complete/i.test(String(c.live_status)),
+        needsInput: !!c.needs_input,
+        hidden: !!(c.is_archived || c.is_temporary),
+      }))
+      .filter(c => c.sessionId && !c.hidden && c.lastActive && c.lastActive >= cutoff);
+
+    // Claude Desktop's merged chat/Cowork conversations are cloud sessions
+    // tagged cowork-remote, not regular chats. Keep the ones started from the
+    // Desktop app (scheduled routines share this list; they're left out).
+    try {
+      for (const x of await coworkSessions()) {
+        if (((x.config || {}).origin) !== 'desktop_app') continue;
+        const last = Date.parse(x.last_event_at || x.updated_at) || null;
+        if (!last || last < cutoff) continue;
+        chatsCache.items.push({
+          sessionId: x.id,
+          name: x.title || 'Desktop chat',
+          lastActive: last,
+          model: (x.config || {}).model || null,
+          project: null,
+          desktop: true,
+          busy: x.worker_status === 'running' || x.worker_status === 'busy',
+          needsInput: x.worker_status === 'requires_action',
+        });
+      }
+    } catch (e) {
+      if (DEBUG) log(`desktop chats fetch skipped: ${e.message}`);
+    }
+    chatsCache.items = chatsCache.items
+      .sort((a, b) => b.lastActive - a.lastActive)
+      .slice(0, 8);
+  } catch (e) {
+    if (DEBUG) log(`chats fetch skipped: ${e.message}`);
+  }
+  return chatsCache.items;
 }
 
 // Everything the "Where you left off" window shows, for whichever session
@@ -1411,6 +1534,22 @@ ipcMain.on('widget:fit', (_e, h) => {
   widgetWin.setResizable(false);
   if (DEBUG) log(`fit: ${b.width}x${b.height} -> ${WIDGET_WIDTH}x${height}`);
 });
+ipcMain.handle('scheduled:list', async () => {
+  try {
+    const tasks = await listScheduled();
+    if (DEBUG) log(`scheduled: ${tasks.map(t => `${t.name} [runs ${t.runs}, attention ${t.attention}, next ${t.nextRunAt}]`).join(' | ')}`);
+    return { ok: true, tasks };
+  }
+  catch (e) { log(`scheduled: ${e.message}`); return { ok: false, error: e.message, tasks: [] }; }
+});
+ipcMain.on('panel:scheduled', () => openPanel('scheduled', { width: 460, height: 460, title: 'Scheduled tasks' }));
+ipcMain.on('chat:open', (_e, id) => {
+  if (typeof id !== 'string') return;
+  if (/^[0-9a-f-]{36}$/i.test(id)) shell.openExternal(`https://claude.ai/chat/${id}`);
+  // Desktop chats are tasks: the API calls them cse_…, the app's URLs use
+  // session_… for the same id.
+  else if (/^cse_\w+$/.test(id)) shell.openExternal(`https://claude.ai/task/${id.replace(/^cse_/, 'session_')}`);
+});
 // Using a reset happens on claude.ai (it asks you to confirm), not here.
 ipcMain.on('usage:openPage', () => shell.openExternal('https://claude.ai/settings/usage'));
 ipcMain.handle('theme:accentColor', () => {
@@ -1445,7 +1584,7 @@ function sniffUsagePage() {
       try {
         const body = (await dbg.sendCommand('Network.getResponseBody', { requestId: p.requestId })).body;
         // Scripts: URL only (they're public and can be fetched to search).
-        if (r.type !== 'Script') r.body = body.slice(0, 20000);
+        if (r.type !== 'Script') r.body = body.slice(0, 200000);
       } catch {}
       calls.push(r);
     }
@@ -1459,7 +1598,7 @@ function sniffUsagePage() {
   // Network.enable doesn't resolve on a window that hasn't navigated yet, so
   // don't gate the load on it.
   dbg.sendCommand('Network.enable').catch((e) => log(`sniff: ${e.message}`));
-  win.loadURL('https://claude.ai/settings/usage').catch((e) => log(`sniff: load ${e.message}`));
+  win.loadURL(process.env.CLAUDE_USAGE_SNIFF_URL || 'https://claude.ai/settings/usage').catch((e) => log(`sniff: load ${e.message}`));
   setTimeout(() => {
     try { fs.writeFileSync(path.join(userData, 'usage-page-urls.txt'), urls.join('\n')); } catch {}
   }, 20000);

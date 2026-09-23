@@ -186,6 +186,26 @@ function render(data) {
     desk.append(row);
   }
 
+  const chatBox = $('chats');
+  chatBox.textContent = '';
+  const cRows = data.chats || [];
+  $('chat-section').hidden = !cRows.length;
+  for (const c of cRows) {
+    const row = el('div', 'sess');
+    row.title = 'Open on claude.ai';
+    const top = el('div', 'sess-top');
+    const dot = el('span', 'dot ' + (c.busy ? 'busy' : 'idle'));
+    top.append(dot, el('span', 'sess-name', c.name), el('span', 'sess-project', c.desktop ? 'Claude Desktop' : 'claude.ai'));
+    if (c.needsInput) top.append(el('span', 'pill on', 'needs you'));
+    const meta = el('div', 'sess-meta');
+    meta.append(el('span', null, `active ${ago(c.lastActive)}`));
+    if (c.model) meta.append(el('span', null, c.model));
+    if (c.project) meta.append(el('span', null, `project ${c.project}`));
+    row.append(top, meta);
+    row.addEventListener('click', () => window.usage.openChat(c.sessionId));
+    chatBox.append(row);
+  }
+
   const bg = $('background');
   bg.textContent = '';
   const rows = data.background || [];

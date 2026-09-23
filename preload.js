@@ -18,6 +18,9 @@ contextBridge.exposeInMainWorld('usage', {
   pinSession: (sessionId) => ipcRenderer.invoke('sessions:pin', sessionId),
   openSessions: () => ipcRenderer.send('panel:sessions'),
   openUsagePage: () => ipcRenderer.send('usage:openPage'),
+  openChat: (id) => ipcRenderer.send('chat:open', id),
+  scheduled: () => ipcRenderer.invoke('scheduled:list'),
+  openScheduled: () => ipcRenderer.send('panel:scheduled'),
   fitHeight: (h) => ipcRenderer.send('widget:fit', h),
   autoContinue: {
     activity: () => ipcRenderer.invoke('autocontinue:activity'),

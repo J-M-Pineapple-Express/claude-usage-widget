@@ -328,6 +328,20 @@ function renderSessionList(d) {
     list.append(el('div', 'si-group', 'Claude Desktop'));
     for (const s of desk) list.append(sessionItem(s));
   }
+  const chats = d.chats || [];
+  if (chats.length) {
+    list.append(el('div', 'si-group', 'Chats'));
+    for (const c of chats) {
+      const row = el('div', 'si-bot si-chat');
+      row.title = `${c.name}${c.desktop ? ' · Claude Desktop' : ''}${c.project ? ` · project ${c.project}` : ''}
+Active ${agoText(c.lastActive)}${c.model ? ` · ${c.model}` : ''}
+Click to open on claude.ai`;
+      row.append(el('span', 'dot ' + (c.busy ? 'busy' : 'idle')), el('span', 'si-name', c.name),
+        el('span', 'si-proj', c.needsInput ? 'needs you' : agoText(c.lastActive)));
+      row.addEventListener('click', () => window.usage.openChat(c.sessionId));
+      list.append(row);
+    }
+  }
   const bots = d.background || [];
   if (bots.length) {
     list.append(el('div', 'si-group', 'Bots & scripts'));
@@ -341,19 +355,39 @@ function renderSessionList(d) {
       list.append(row);
     }
   }
+  const links = el('div', 'si-links');
+  const sched = el('button', 'link si-window', schedAttention ? `scheduled tasks · ${schedAttention} new ↗` : 'scheduled tasks ↗');
+  if (schedAttention) sched.classList.add('attn');
+  sched.title = 'Your scheduled Cowork tasks and which ones need attention';
+  sched.addEventListener('click', () => window.usage.openScheduled());
   const win = el('button', 'link si-window', 'open sessions window ↗');
   win.title = sessionsTooltip(d);
   win.addEventListener('click', () => window.usage.openSessions());
-  list.append(win);
+  links.append(win, sched);
+  list.append(links);
   $('sum-sessions').textContent = `${running.length} running` +
     (desk.length ? ` · ${desk.length} desktop` : '') +
+    (chats.length ? ` · ${chats.length} chat${chats.length > 1 ? 's' : ''}` : '') +
     (bots.length ? ` · ${bots.length} bot${bots.length > 1 ? 's' : ''}` : '');
+}
+
+// Count of scheduled tasks needing attention, for the link's badge.
+let schedAttention = 0;
+let schedFetchedAt = 0;
+function refreshScheduled() {
+  if (Date.now() - schedFetchedAt < 60000) return;
+  schedFetchedAt = Date.now();
+  window.usage.scheduled().then((r) => {
+    const n = r && r.ok ? r.tasks.filter(t => t.attention).length : 0;
+    if (n !== schedAttention) { schedAttention = n; renderSessionList(lastSessions); }
+  }).catch(() => {});
 }
 
 let hoverFetchedAt = 0;
 function refreshHoverInfo(force) {
   if (!force && Date.now() - hoverFetchedAt < 10000) return;
   hoverFetchedAt = Date.now();
+  refreshScheduled();
   window.usage.recap().then((r) => { $('ctx-where-text').title = recapTooltip(r); }).catch(() => {});
   window.usage.sessions().then((d) => {
     renderSessionList(d);

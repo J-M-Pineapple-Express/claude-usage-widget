@@ -97,3 +97,8 @@ h2 {
 .item .head { display: flex; justify-content: space-between; gap: 8px; font-size: 11px; margin-bottom: 4px; }
 .item .head .w { font-weight: 600; overflow-wrap: anywhere; }
 .item .head .t { opacity: 0.5; white-space: nowrap; }
+
+/* Scheduled tasks: Desktop's blue "needs attention" dot */
+.dot.attn { background: #4a9eff; box-shadow: 0 0 0 2px rgba(74,158,255,0.25); }
+.pill.attn { background: rgba(74,158,255,0.18); color: #7ab8ff; }
+.sess.attention { border-color: rgba(74,158,255,0.35); }
