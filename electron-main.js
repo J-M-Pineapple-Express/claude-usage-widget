@@ -66,25 +66,54 @@ const SIZES = [
 ];
 const prefsFile = path.join(userData, 'widget-prefs.json');
 function loadPrefs() { try { return JSON.parse(fs.readFileSync(prefsFile, 'utf8')) || {}; } catch { return {}; } }
-let widgetSize = SIZES.find(z => z.id === loadPrefs().size) || SIZES[1];
+// A size dragged to by hand (macOS edge drag) is a custom scale.
+const MIN_SCALE = 0.75, MAX_SCALE = 1.8;
+function customSize(scale) {
+  return { id: 'custom', label: 'Custom', scale: Math.max(MIN_SCALE, Math.min(MAX_SCALE, scale)) };
+}
+const savedPrefs = loadPrefs();
+let widgetSize = savedPrefs.size === 'custom' && savedPrefs.scale
+  ? customSize(Number(savedPrefs.scale))
+  : (SIZES.find(z => z.id === savedPrefs.size) || SIZES[1]);
 let lastCardHeight = 0;
 const widgetWidth = () => Math.round(WIDGET_WIDTH * widgetSize.scale);
 
-function setWidgetSize(id) {
-  const next = SIZES.find(z => z.id === id);
-  if (!next || next === widgetSize) return;
+// Zoom the page, and tell it the scale: the native buttons don't zoom, so
+// the title's left padding has to shrink as the page grows (and vice versa).
+function applyZoom() {
+  if (!widgetWin || widgetWin.isDestroyed()) return;
+  widgetWin.webContents.setZoomFactor(widgetSize.scale);
+  widgetWin.webContents.send('widget:scale', widgetSize.scale);
+}
+
+function setWidgetSize(id, scale) {
+  const next = id === 'custom' ? customSize(scale) : SIZES.find(z => z.id === id);
+  if (!next || (next.id === widgetSize.id && next.scale === widgetSize.scale)) return;
   widgetSize = next;
-  try { fs.writeFileSync(prefsFile, JSON.stringify({ ...loadPrefs(), size: id })); } catch {}
+  try { fs.writeFileSync(prefsFile, JSON.stringify({ ...loadPrefs(), size: next.id, scale: next.scale })); } catch {}
   if (widgetWin && !widgetWin.isDestroyed()) {
-    widgetWin.webContents.setZoomFactor(widgetSize.scale);
+    applyZoom();
     if (lastCardHeight) fitWidget(lastCardHeight);
   }
-  const item = trayMenu && trayMenu.getMenuItemById(`size-${id}`);
-  if (item) item.checked = true;
+  // A custom (dragged) size leaves every preset unticked.
+  for (const z of SIZES) {
+    const item = trayMenu && trayMenu.getMenuItemById(`size-${z.id}`);
+    if (item) item.checked = z.id === next.id;
+  }
+}
+
+// macOS green button: zoom to Extra large and back to the size you had.
+let zoomReturn = null;
+function toggleZoom() {
+  if (widgetSize.id !== 'xl') { zoomReturn = { id: widgetSize.id, scale: widgetSize.scale }; setWidgetSize('xl'); }
+  else if (zoomReturn) setWidgetSize(zoomReturn.id, zoomReturn.scale);
+  else setWidgetSize('normal');
 }
 
 function stepWidgetSize(dir) {
-  const i = SIZES.indexOf(widgetSize);
+  // From a custom size, step to the nearest preset in that direction.
+  let i = SIZES.findIndex(z => z.id === widgetSize.id);
+  if (i < 0) i = SIZES.reduce((best, z, k) => Math.abs(z.scale - widgetSize.scale) < Math.abs(SIZES[best].scale - widgetSize.scale) ? k : best, 0);
   const j = dir === 0 ? 1 : Math.max(0, Math.min(SIZES.length - 1, i + dir));
   setWidgetSize(SIZES[j].id);
 }
@@ -96,14 +125,21 @@ function createWidget() {
     widgetWin.focus();
     return;
   }
+  const mac = process.platform === 'darwin';
   widgetWin = new BrowserWindow({
     width: widgetWidth(),
     height: 440, // starting guess; the page fits it to its content
-    frame: false,
+    // On macOS, keep the native red/yellow/green buttons over the card
+    // (hidden title bar); elsewhere the widget draws its own – and ×.
+    frame: mac,
+    // Green = zoom, like any Mac app: the window must be resizable and
+    // maximizable for macOS to enable it (user drag-resizing is blocked below).
+    ...(mac ? { titleBarStyle: 'hidden', trafficLightPosition: { x: 12, y: 13 },
+                maximizable: true, fullscreenable: false } : {}),
     transparent: true,
     backgroundColor: '#00000000',
     hasShadow: false,
-    resizable: false,
+    resizable: mac,
     skipTaskbar: false,
     title: 'Claude Usage',
     webPreferences: {
@@ -115,7 +151,25 @@ function createWidget() {
   });
   widgetWin.setAlwaysOnTop(true, 'floating');
   widgetWin.loadFile(path.join(__dirname, 'public', 'index.html'));
-  widgetWin.webContents.on('did-finish-load', () => widgetWin.webContents.setZoomFactor(widgetSize.scale));
+  widgetWin.webContents.on('did-finish-load', () => applyZoom());
+  if (mac) {
+    // No Dock icon, so a minimized widget would have nothing to click to come
+    // back. Treat yellow as hide; the menu-bar icon shows it again.
+    widgetWin.on('minimize', () => { widgetWin.restore(); widgetWin.hide(); });
+    // Green zooms between your size and Extra large.
+    widgetWin.on('maximize', () => { widgetWin.unmaximize(); toggleZoom(); });
+    // Edge/corner drag scales the whole widget. Width sets the scale; a
+    // top/bottom-only drag scales by the height change. The height is then
+    // re-fitted to the content, so the drag never leaves empty space.
+    widgetWin.on('will-resize', (e, nb) => {
+      e.preventDefault();
+      const b = widgetWin.getBounds();
+      const scale = nb.width !== b.width
+        ? nb.width / WIDGET_WIDTH
+        : widgetSize.scale * (nb.height / Math.max(1, b.height));
+      if (Math.abs(scale - widgetSize.scale) >= 0.01) setWidgetSize('custom', Math.round(scale * 100) / 100);
+    });
+  }
   // Cmd/Ctrl + = / - / 0 change the size, like zoom in any Mac or Windows app.
   widgetWin.webContents.on('before-input-event', (e, input) => {
     if (input.type !== 'keyDown' || !(input.meta || input.control)) return;
@@ -1588,7 +1642,8 @@ function fitWidget(h) {
   // ignores size changes on some platforms.
   widgetWin.setResizable(true);
   widgetWin.setBounds({ x: b.x, y: b.y, width: WIDGET_WIDTH, height });
-  widgetWin.setResizable(false);
+  // Stays resizable on macOS so the green button remains enabled.
+  widgetWin.setResizable(process.platform === 'darwin');
   if (DEBUG) log(`fit: ${b.width}x${b.height} -> ${WIDGET_WIDTH}x${height}`);
 }
 ipcMain.handle('scheduled:list', async () => {

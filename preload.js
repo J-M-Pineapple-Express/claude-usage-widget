@@ -24,6 +24,8 @@ contextBridge.exposeInMainWorld('usage', {
   openHelp: (section) => ipcRenderer.send('panel:help', section || 'top'),
   onGoto: (cb) => ipcRenderer.on('panel:goto', (_e, hash) => cb(hash)),
   fitHeight: (h) => ipcRenderer.send('widget:fit', h),
+  platform: process.platform,
+  onScale: (cb) => ipcRenderer.on('widget:scale', (_e, s) => cb(s)),
   autoContinue: {
     activity: () => ipcRenderer.invoke('autocontinue:activity'),
     openActivity: () => ipcRenderer.send('panel:activity'),

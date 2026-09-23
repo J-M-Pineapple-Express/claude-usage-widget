@@ -1,5 +1,18 @@
 # Changelog
 
+## v0.15.0 — 2026-09-22
+
+### Added (macOS)
+- **Native window buttons.** The widget uses the real red/yellow/green buttons
+  instead of its own – and ×. Red closes the widget (it keeps running in the
+  menu bar), yellow hides it, and green zooms it to Extra large and back.
+- **Edge dragging.** Drag any edge or corner to scale the whole widget
+  smoothly (75–180%); the height keeps fitting the content and the size is
+  remembered. The Size menu and ⌘ +/−/0 still work.
+
+Windows is unchanged: its own buttons, the Size menu and Ctrl +/−/0.
+Not yet tested on a real Mac.
+
 ## v0.14.0 — 2026-09-22
 
 ### Added

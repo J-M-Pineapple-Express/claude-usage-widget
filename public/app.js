@@ -500,6 +500,12 @@ $('ctx-detail').addEventListener('click', () => {
   renderContext(lastCtx);
 });
 
+// macOS: native traffic-light buttons replace – and ×. They sit at a fixed
+// 72 device px from the left, so the padding is divided by the page zoom.
+if (window.usage.platform === 'darwin') {
+  document.body.classList.add('mac');
+  window.usage.onScale((s) => document.documentElement.style.setProperty('--zoom', String(s || 1)));
+}
 $('help').addEventListener('click', () => window.usage.openHelp('top'));
 // Each section's (i) opens Help at that section without folding the section.
 for (const info of document.querySelectorAll('.sec-info')) {

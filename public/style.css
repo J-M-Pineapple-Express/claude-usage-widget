@@ -28,6 +28,10 @@ html, body {
   justify-content: space-between;
   margin-bottom: 8px;
 }
+/* macOS: native red/yellow/green sit top-left; clear them and drop our own
+   hide/quit buttons (quit stays in the menu-bar menu). */
+.mac .drag { padding-left: calc(64px / var(--zoom, 1)); min-height: 18px; }
+.mac #hide, .mac #close { display: none; }
 .title { font-size: 12px; font-weight: 600; letter-spacing: 0.4px; opacity: 0.85; }
 .actions { -webkit-app-region: no-drag; display: flex; gap: 4px; }
 .actions button {
