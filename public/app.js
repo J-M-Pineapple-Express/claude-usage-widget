@@ -500,6 +500,14 @@ $('ctx-detail').addEventListener('click', () => {
   renderContext(lastCtx);
 });
 
+$('help').addEventListener('click', () => window.usage.openHelp('top'));
+// Each section's (i) opens Help at that section without folding the section.
+for (const info of document.querySelectorAll('.sec-info')) {
+  const open = (e) => { e.stopPropagation(); e.preventDefault(); window.usage.openHelp(info.dataset.help); };
+  info.addEventListener('click', open);
+  info.addEventListener('keydown', (e) => { if (e.key === 'Enter' || e.key === ' ') open(e); });
+}
+
 $('refresh').addEventListener('click', () => {
   $('status').textContent = 'Refreshing…';
   window.usage.refresh();

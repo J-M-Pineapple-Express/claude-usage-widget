@@ -1487,9 +1487,10 @@ ipcMain.handle('sessions:pin', (_e, sessionId) => {
 // Small secondary windows (recap, Auto Continue activity). One of each at a
 // time; opening again just brings the existing one forward.
 const panels = {};
-function openPanel(name, { width, height, title }) {
+function openPanel(name, { width, height, title, hash }) {
   const existing = panels[name];
   if (existing && !existing.isDestroyed()) {
+    if (hash) existing.webContents.send('panel:goto', hash);
     existing.show();
     existing.focus();
     return;
@@ -1511,13 +1512,19 @@ function openPanel(name, { width, height, title }) {
     },
   });
   win.setMenuBarVisibility(false);
-  win.loadFile(path.join(__dirname, 'public', `${name}.html`));
+  win.loadFile(path.join(__dirname, 'public', `${name}.html`), hash ? { hash } : undefined);
   win.on('closed', () => { delete panels[name]; });
   panels[name] = win;
 }
 ipcMain.on('panel:recap', () => openPanel('recap', { width: 420, height: 420, title: 'Where you left off' }));
 ipcMain.on('panel:activity', () => openPanel('activity', { width: 440, height: 500, title: 'Auto Continue activity' }));
 ipcMain.on('panel:sessions', () => openPanel('sessions', { width: 480, height: 460, title: 'Claude Code sessions' }));
+// Help, opened at a section when a section's (i) is clicked.
+const HELP_SECTIONS = ['top', 'context', 'sessions', 'limits', 'extra', 'autocontinue', 'breakdown'];
+ipcMain.on('panel:help', (_e, section) => openPanel('help', {
+  width: 500, height: 620, title: 'How Claude Usage works',
+  hash: HELP_SECTIONS.includes(section) ? section : 'top',
+}));
 // The widget reports its card height; fit the window to it (width is fixed).
 ipcMain.on('widget:fit', (_e, h) => {
   if (!widgetWin || widgetWin.isDestroyed()) return;

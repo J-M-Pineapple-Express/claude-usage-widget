@@ -144,6 +144,9 @@ html, body {
 .chev { font-size: 9px; opacity: 0.5; width: 9px; flex: none; transition: transform 120ms ease; }
 .sec-title { font-size: 10px; letter-spacing: 0.3px; opacity: 0.5; flex: none; }
 .sec-head:hover .sec-title, .sec-head:hover .chev { opacity: 0.85; }
+.sec-info { font-size: 10px; opacity: 0.35; margin-left: 2px; cursor: help; transition: opacity 120ms ease; }
+.sec-head:hover .sec-info, .sec-info:focus-visible { opacity: 0.6; }
+.sec-info:hover { opacity: 1 !important; color: #f2a488; }
 .sec-head:focus-visible { outline: 1px solid rgba(255,255,255,0.4); outline-offset: 1px; border-radius: 3px; }
 .sec-sum {
   display: none;

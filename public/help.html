@@ -1,0 +1,132 @@
+<!doctype html>
+<html>
+<head>
+  <meta charset="utf-8" />
+  <meta http-equiv="Content-Security-Policy" content="default-src 'self'; style-src 'self' 'unsafe-inline'; script-src 'self'; img-src 'self' data:;" />
+  <title>How Claude Usage works</title>
+  <link rel="stylesheet" href="panel.css" />
+  <style>
+    main { max-width: 460px; }
+    .toc { display: flex; flex-wrap: wrap; gap: 4px 10px; font-size: 11px; margin: 0 0 14px; }
+    .toc a { color: #e89070; text-decoration: none; }
+    .toc a:hover { text-decoration: underline; }
+    section { padding: 12px 0 4px; border-top: 1px solid rgba(255,255,255,0.08); scroll-margin-top: 8px; }
+    section:target h2, section.flash h2 { color: #f2a488; opacity: 1; }
+    h2 { font-size: 12px; text-transform: none; letter-spacing: 0; opacity: 0.9; margin: 0 0 6px; }
+    h3 { font-size: 11px; margin: 12px 0 4px; opacity: 0.85; }
+    p, li { font-size: 12px; line-height: 1.5; }
+    p { margin: 0 0 8px; }
+    ul, ol { margin: 0 0 8px; padding-left: 18px; }
+    li + li { margin-top: 3px; }
+    code { font-size: 11px; background: rgba(255,255,255,0.07); padding: 0 4px; border-radius: 3px; overflow-wrap: anywhere; }
+    .flow { display: grid; gap: 6px; margin: 8px 0 10px; }
+    .step { display: grid; grid-template-columns: 22px 1fr; gap: 8px; align-items: start; background: rgba(255,255,255,0.035); border-radius: 6px; padding: 8px 10px; }
+    .n { width: 20px; height: 20px; border-radius: 50%; border: 1px solid rgba(232,144,112,0.6); color: #f2a488; font-size: 11px; display: grid; place-items: center; }
+    .who { font-size: 10px; opacity: 0.55; text-transform: uppercase; letter-spacing: 0.4px; }
+    .note { font-size: 11px; background: rgba(74,158,255,0.1); border-left: 2px solid rgba(74,158,255,0.6); padding: 6px 9px; border-radius: 4px; margin: 6px 0 10px; }
+  </style>
+</head>
+<body>
+  <main>
+    <section id="top" style="border-top:none;padding-top:0">
+      <h1>How Claude Usage works</h1>
+      <p class="sub">Everything the widget shows, where each number comes from, and how Auto Continue decides when to act. Nothing leaves your computer except the widget's own requests to claude.ai, signed in as you.</p>
+      <nav class="toc">
+        <a href="#context">Context</a><a href="#sessions">Sessions</a><a href="#limits">Limits</a>
+        <a href="#extra">Extra usage</a><a href="#autocontinue">Auto Continue</a><a href="#breakdown">This week by product</a>
+      </nav>
+      <p>Click a section's ▾ header to fold it to a one-line summary; the widget remembers what you folded and resizes to fit.</p>
+    </section>
+
+    <section id="context">
+      <h2>Context</h2>
+      <p>How full the Claude Code conversation you're working in is, so you see auto-compaction coming.</p>
+      <ul>
+        <li><b>Where it comes from:</b> the session's transcript file in <code>~/.claude/projects/</code>. The widget reads the token count Claude Code recorded for the last reply, every 15 seconds. It's a local file read, not a claude.ai request.</li>
+        <li><b>The bar</b> measures against about 80% of the window (800K of 1M), which is roughly where Claude Code compacts. Green under 40%, yellow under 70%, red above.</li>
+        <li><b>Click the detail line</b> to switch the window size (200K / 500K / 1M) if your model's window differs.</li>
+        <li><b>jsonl</b> is the transcript's size on disk. Green under 12 MB, yellow under 15 MB, red above. Big transcripts are slow to resume.</li>
+        <li><b>Which session?</b> The one that was active most recently, unless you've pinned one (see Sessions).</li>
+      </ul>
+    </section>
+
+    <section id="sessions">
+      <h2>Sessions</h2>
+      <p>Everything Claude is doing for you right now, in one list.</p>
+      <ul>
+        <li><b>In widget:</b> the session the Context bar is measuring. Hover it for its recap; click it to open the recap in a window.</li>
+        <li><b>Running sessions</b> (terminals, VS Code): read from Claude Code's own records in <code>~/.claude/sessions/</code>. Green dot = working, grey = idle. Click one to expand it; <b>show in widget</b> pins it to the Context bar, <b>recap ↗</b> opens its recap.</li>
+        <li><b>Claude Desktop:</b> Code and Cowork sessions from the desktop app's records, active in the last day.</li>
+        <li><b>Chats:</b> your claude.ai chats and Claude Desktop's chats, active in the last day, read from claude.ai. "needs you" means Claude is waiting on you. Click to open it.</li>
+        <li><b>Bots &amp; scripts:</b> things that drive Claude Code headless with <code>claude -p --resume</code> (like a Discord bot). They only show busy while replying.</li>
+        <li><b>scheduled tasks ↗:</b> your scheduled Cowork tasks, with Desktop's blue dot when a run is unread or waiting on you.</li>
+        <li><b>open sessions window ↗:</b> the same information with more room.</li>
+      </ul>
+    </section>
+
+    <section id="limits">
+      <h2>Limits</h2>
+      <ul>
+        <li><b>5-hour:</b> how much of your current 5-hour usage window you've used, and when it resets.</li>
+        <li><b>Weekly:</b> the same for your weekly limit.</li>
+        <li><b>Where it comes from:</b> the same data as claude.ai's Settings → Usage page, requested once a minute (↻ refreshes now). The widget signs in with the claude.ai login you gave it the first time; there's no API key.</li>
+      </ul>
+    </section>
+
+    <section id="extra">
+      <h2>Extra usage</h2>
+      <ul>
+        <li><b>Spend:</b> extra usage (usage credits past your plan's limits) this month, or "off" if it isn't turned on.</li>
+        <li><b>Balance:</b> prepaid credits you have left.</li>
+        <li><b>Resets:</b> one-off resets Anthropic sometimes gives out that refill your 5-hour and weekly limits when you choose to use one. Shows how many you have and when they expire. Click it to open claude.ai, where you use a reset; the widget never uses one for you.</li>
+      </ul>
+    </section>
+
+    <section id="autocontinue">
+      <h2>Auto Continue</h2>
+      <p>When Claude Code stops because you hit a usage limit, Auto Continue waits for the limit to reset, then types a message into that same window telling Claude to pick up where it left off. You don't have to be there.</p>
+
+      <h3>The pieces, and what watches what</h3>
+      <div class="flow">
+        <div class="step"><span class="n">1</span><div><div class="who">Claude Code, via a hook</div>
+          Turning the switch on adds a small hook to <code>~/.claude/settings.json</code> (a <code>StopFailure</code> hook for rate limits). Claude Code runs it <b>only when a reply stops on a usage limit</b>. It doesn't run otherwise and costs nothing.</div></div>
+        <div class="step"><span class="n">2</span><div><div class="who">The hook</div>
+          Writes down which session stalled and which window it's in (the terminal, VS Code or app window), plus any agents the limit interrupted, into a queue file: <code>~/.claude/auto-continue-queue.json</code>. Then it exits.</div></div>
+        <div class="step"><span class="n">3</span><div><div class="who">The widget</div>
+          Every minute, when it checks your usage, it also looks at that queue. It waits until <b>both</b> the 5-hour and weekly bars are under 100%, because if either is still full, Claude would stop again right away.</div></div>
+        <div class="step"><span class="n">4</span><div><div class="who">The widget, when limits reset</div>
+          Brings that session's window to the front, pastes <i>"I had hit my token limit previously, please continue where we left off."</i> and presses Enter. That session's entry leaves the queue, and the send is logged under <b>activity</b>.</div></div>
+      </div>
+
+      <h3>What it needs to work</h3>
+      <ul>
+        <li><b>The widget has to be running.</b> Claude Code only records the stall; the widget is what watches the clock and sends the message. If the widget is closed when limits reset, it sends as soon as you open it.</li>
+        <li><b>The window has to still be open.</b> It types into that exact window; if you closed it, there's nothing to type into.</li>
+        <li><b>The computer has to be unlocked.</b> Windows won't let an app type while the lock screen or screensaver is up. The widget keeps retrying every minute (up to 30 tries) and sends once you're back.</li>
+        <li><b>On a Mac,</b> the widget needs Accessibility permission (System Settings → Privacy &amp; Security → Accessibility) to type into another app. It asks when you turn Auto Continue on.</li>
+      </ul>
+
+      <h3>Resume agents</h3>
+      <p><b>Off</b> (the default): if subagents were interrupted, the message lists them and Claude waits for you to decide. <b>On:</b> the message also tells Claude to restart them. Off is safer, since restarting a batch of agents can spend a fresh window before you're back.</p>
+
+      <h3>activity</h3>
+      <p>Click <b>activity</b> next to the switch to see what's waiting in the queue, the exact message each session will get, when the widget last checked, and what it has sent before.</p>
+
+      <div class="note"><b>Claude Code's own setting:</b> newer Claude Code versions can also continue by themselves when a limit resets (<code>/config</code> → "Continue automatically at usage limit"). That works inside Claude Code, without the widget, but only for that session. If you turn both on, a session may get told to continue twice. Pick one.</div>
+
+      <h3>What it does not do</h3>
+      <ul>
+        <li>It doesn't watch your screen or read your conversations. The only thing it knows about a session is what the hook wrote down when it stalled.</li>
+        <li>It doesn't send anything to Anthropic beyond the usage check the widget already makes.</li>
+        <li>Turning the switch off removes the hook and clears the queue. Your settings file is backed up first (<code>settings.json.auto-continue-backup</code>).</li>
+      </ul>
+    </section>
+
+    <section id="breakdown">
+      <h2>This week by product</h2>
+      <p>What used up this week's allowance: Claude Code, Chats, Cowork and Other, as percentages of the weekly total. From the same claude.ai usage data as Limits. Handy for seeing whether the week went to coding or to chatting.</p>
+    </section>
+  </main>
+  <script src="help.js"></script>
+</body>
+</html>

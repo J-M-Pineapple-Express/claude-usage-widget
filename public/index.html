@@ -11,6 +11,7 @@
     <div id="drag" class="drag">
       <span class="title">Claude Usage</span>
       <div class="actions">
+        <button id="help" title="How this works">ⓘ</button>
         <button id="refresh" title="Refresh">↻</button>
         <button id="hide" title="Hide (reopen from the tray / menu-bar icon)">–</button>
         <button id="close" title="Quit">×</button>
@@ -20,7 +21,7 @@
     <!-- Each section folds under its header. A folded header still shows a
          one-line summary (sum-*), filled in by updateSummaries() in app.js. -->
     <section class="sec" data-sec="ctx">
-      <button class="sec-head" aria-expanded="true"><span class="chev">▾</span><span class="sec-title">Context</span><span class="sec-sum" id="sum-ctx"></span></button>
+      <button class="sec-head" aria-expanded="true"><span class="chev">▾</span><span class="sec-title">Context</span><span class="sec-info" data-help="context" role="button" tabindex="0" title="What this shows">ⓘ</span><span class="sec-sum" id="sum-ctx"></span></button>
       <div class="sec-body">
         <div class="row">
           <div class="label">Context</div>
@@ -32,7 +33,7 @@
     </section>
 
     <section class="sec" data-sec="sessions">
-      <button class="sec-head" aria-expanded="true"><span class="chev">▾</span><span class="sec-title">Sessions</span><span class="sec-sum" id="sum-sessions"></span></button>
+      <button class="sec-head" aria-expanded="true"><span class="chev">▾</span><span class="sec-title">Sessions</span><span class="sec-info" data-help="sessions" role="button" tabindex="0" title="What this shows">ⓘ</span><span class="sec-sum" id="sum-sessions"></span></button>
       <div class="sec-body">
         <!-- The session the context bar is measuring: hover for its recap,
              click to open it in a window. -->
@@ -44,7 +45,7 @@
     </section>
 
     <section class="sec" data-sec="limits">
-      <button class="sec-head" aria-expanded="true"><span class="chev">▾</span><span class="sec-title">Limits</span><span class="sec-sum" id="sum-limits"></span></button>
+      <button class="sec-head" aria-expanded="true"><span class="chev">▾</span><span class="sec-title">Limits</span><span class="sec-info" data-help="limits" role="button" tabindex="0" title="What this shows">ⓘ</span><span class="sec-sum" id="sum-limits"></span></button>
       <div class="sec-body">
         <div class="row">
           <div class="label">5-hour</div>
@@ -63,7 +64,7 @@
     </section>
 
     <section class="sec" data-sec="extra">
-      <button class="sec-head" aria-expanded="true"><span class="chev">▾</span><span class="sec-title">Extra usage</span><span class="sec-sum" id="sum-extra"></span></button>
+      <button class="sec-head" aria-expanded="true"><span class="chev">▾</span><span class="sec-title">Extra usage</span><span class="sec-info" data-help="extra" role="button" tabindex="0" title="What this shows">ⓘ</span><span class="sec-sum" id="sum-extra"></span></button>
       <div class="sec-body">
         <div class="extra-row">
           <span class="extra-label">Spend</span>
@@ -81,7 +82,7 @@
     </section>
 
     <section id="ac-wrap" class="sec hidden" data-sec="ac">
-      <button class="sec-head" aria-expanded="true"><span class="chev">▾</span><span class="sec-title">Auto Continue</span><span class="sec-sum" id="sum-ac"></span></button>
+      <button class="sec-head" aria-expanded="true"><span class="chev">▾</span><span class="sec-title">Auto Continue</span><span class="sec-info" data-help="autocontinue" role="button" tabindex="0" title="What this shows">ⓘ</span><span class="sec-sum" id="sum-ac"></span></button>
       <div class="sec-body">
         <div class="extra-row ac-row"
              title="When a usage limit resets, send the stalled Claude session a message telling it to continue where it left off.">
@@ -105,7 +106,7 @@
     <!-- Which products ate this week's allowance. Rows are built from the API
          response, so a new product category shows up without a code change. -->
     <section id="breakdown-wrap" class="sec breakdown-wrap hidden" data-sec="breakdown">
-      <button class="sec-head" aria-expanded="true"><span class="chev">▾</span><span class="sec-title">This week by product</span><span class="sec-sum" id="sum-breakdown"></span></button>
+      <button class="sec-head" aria-expanded="true"><span class="chev">▾</span><span class="sec-title">This week by product</span><span class="sec-info" data-help="breakdown" role="button" tabindex="0" title="What this shows">ⓘ</span><span class="sec-sum" id="sum-breakdown"></span></button>
       <div class="sec-body">
         <div id="breakdown"></div>
       </div>

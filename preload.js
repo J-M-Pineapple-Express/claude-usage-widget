@@ -21,6 +21,8 @@ contextBridge.exposeInMainWorld('usage', {
   openChat: (id) => ipcRenderer.send('chat:open', id),
   scheduled: () => ipcRenderer.invoke('scheduled:list'),
   openScheduled: () => ipcRenderer.send('panel:scheduled'),
+  openHelp: (section) => ipcRenderer.send('panel:help', section || 'top'),
+  onGoto: (cb) => ipcRenderer.on('panel:goto', (_e, hash) => cb(hash)),
   fitHeight: (h) => ipcRenderer.send('widget:fit', h),
   autoContinue: {
     activity: () => ipcRenderer.invoke('autocontinue:activity'),

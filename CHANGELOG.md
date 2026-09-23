@@ -1,5 +1,18 @@
 # Changelog
 
+## v0.13.0 — 2026-09-22
+
+### Added
+- **Help.** An ⓘ in the title bar opens "How Claude Usage works", and each
+  section header has its own ⓘ that opens it at that section. It explains
+  what every number means and where it comes from, and walks through Auto
+  Continue step by step: the Claude Code hook that records a stalled session,
+  the queue file, the widget waiting for both limits to drop under 100%, and
+  the message it sends. Also covers what it needs (widget running, window
+  open, screen unlocked, Mac Accessibility), Resume agents, the activity view,
+  and how it relates to Claude Code's own "Continue automatically at usage
+  limit" setting.
+
 ## v0.12.0 — 2026-09-22
 
 ### Added
