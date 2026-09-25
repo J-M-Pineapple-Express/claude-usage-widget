@@ -88,7 +88,7 @@ Good to know:
 
 - Drag by the title bar to move it.
 - **↻**: refresh now.
-- **–**: hide the widget. Bring it back from the tray / menu-bar icon → **Show widget**.
+- **–**: minimize the widget to the taskbar. Click it there, or the tray icon, to bring it back.
 - **×**: quit.
 - Right-click the tray icon for **Show widget**, **Refresh now**, **Auto Continue**, **Sign out / switch account**, and **Quit**.
 

@@ -1,5 +1,18 @@
 # Changelog
 
+## v0.15.1 — 2026-09-24
+
+### Fixed (Windows)
+- **Minimize no longer makes the widget disappear.** The **–** button used to
+  hide the widget in the tray, which looked like the app had closed. It now
+  minimizes to the taskbar like any other window.
+- **Only one copy runs.** Opening Claude Usage while it's already running
+  brings the open widget forward instead of starting another copy with its
+  own tray icon.
+- **Sign-in is remembered.** The extra copies above couldn't read the saved
+  sign-in, so they asked for it again. The sign-in is also saved to disk right
+  after you log in and again when the app quits.
+
 ## v0.15.0 — 2026-09-22
 
 ### Added (macOS)

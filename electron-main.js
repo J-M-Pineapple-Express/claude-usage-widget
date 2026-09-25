@@ -26,6 +26,26 @@ function log(msg) {
 process.on('uncaughtException', (e) => log(`UNCAUGHT: ${e.stack || e.message}`));
 process.on('unhandledRejection', (r) => log(`UNHANDLED: ${r?.stack || r}`));
 
+// One copy only. A second launch (Start menu, desktop shortcut) used to start a
+// whole new app: another tray icon, and a second process that can't open the
+// cookie store the first one holds, so it asked to sign in again. Now it just
+// brings the running copy's window forward and exits.
+const isPrimary = app.requestSingleInstanceLock();
+if (!isPrimary) {
+  app.quit();
+} else {
+  app.on('second-instance', () => {
+    log('second launch — showing the running instance');
+    if (loginWin && !loginWin.isDestroyed()) {
+      if (loginWin.isMinimized()) loginWin.restore();
+      loginWin.show();
+      loginWin.focus();
+    } else if (app.isReady()) {
+      createWidget();
+    }
+  });
+}
+
 const PARTITION = 'persist:claude-usage';
 const LOGIN_URL = 'https://claude.ai/login';
 // A JSON GET, not a hidden browser scraping a page, so per-minute polling is cheap again.
@@ -202,6 +222,9 @@ function createLogin() {
     if (ok && !loginHandled) {
       loginHandled = true;
       log('login cookies captured — closing login window');
+      // Write the new session cookie to disk now rather than on Chromium's
+      // timer, so a crash or forced close right after sign-in can't lose it.
+      try { await widgetSession().cookies.flushStore(); } catch {}
       try { loginWin && loginWin.close(); } catch {}
       loginWin = null;
       createWidget();
@@ -1674,7 +1697,11 @@ ipcMain.handle('theme:accentColor', () => {
 ipcMain.on('widget:close', () => app.quit());
 ipcMain.on('widget:refresh', () => pollOnce());
 ipcMain.on('widget:hide', () => {
-  if (widgetWin && !widgetWin.isDestroyed()) widgetWin.hide();
+  if (!widgetWin || widgetWin.isDestroyed()) return;
+  // Windows: a real minimize, so the widget stays on the taskbar. Hiding it
+  // looked like the app had closed (it was only in the tray).
+  if (process.platform === 'darwin') widgetWin.hide();
+  else widgetWin.minimize();
 });
 
 // Dev aid (CLAUDE_USAGE_SNIFF=1): load claude.ai's usage page hidden and save
@@ -1722,6 +1749,7 @@ function sniffUsagePage() {
 }
 
 app.whenReady().then(async () => {
+  if (!isPrimary) return; // quitting; the running copy was shown instead
   log(`app ready — v${APP_VERSION}`);
   if (process.platform === 'darwin' && app.dock) app.dock.hide();
   // Keep the registered hook matching the setting and pointing at this
@@ -1737,6 +1765,16 @@ app.whenReady().then(async () => {
   } else {
     createLogin();
   }
+});
+
+// Chromium saves cookies on a timer; flush on quit so the sign-in always
+// survives to the next launch.
+let cookiesFlushed = false;
+app.on('before-quit', (e) => {
+  if (cookiesFlushed || !app.isReady()) return;
+  e.preventDefault();
+  cookiesFlushed = true;
+  widgetSession().cookies.flushStore().catch(() => {}).finally(() => app.quit());
 });
 
 app.on('window-all-closed', (e) => {
