@@ -1,5 +1,13 @@
 # Changelog
 
+## v0.17.1 — 2026-09-27
+
+### Added
+- **Collapse / expand all.** A **⊟** button in the title bar folds every
+  section to its one-line summary; it turns into **⊞** to open them all
+  again. Folding single sections still works, and the choice is remembered.
+  (#5)
+
 ## v0.17.0 — 2026-09-27
 
 ### Added

@@ -436,25 +436,47 @@ let folded = [];
 try { folded = JSON.parse(localStorage.getItem(FOLDED_KEY) || '[]'); } catch {}
 if (!Array.isArray(folded)) folded = [];
 
-for (const sec of document.querySelectorAll('.sec')) {
-  const name = sec.dataset.sec;
+const sections = [...document.querySelectorAll('.sec')];
+const saveFolded = () => { try { localStorage.setItem(FOLDED_KEY, JSON.stringify(folded)); } catch {} };
+function applyFold(sec, isFolded) {
   const head = sec.querySelector('.sec-head');
-  const apply = (isFolded) => {
-    sec.classList.toggle('collapsed', isFolded);
-    head.setAttribute('aria-expanded', String(!isFolded));
-    head.title = isFolded ? 'Show' : 'Hide';
-  };
-  apply(folded.includes(name));
-  head.addEventListener('click', () => {
+  sec.classList.toggle('collapsed', isFolded);
+  head.setAttribute('aria-expanded', String(!isFolded));
+  head.title = isFolded ? 'Show' : 'Hide';
+}
+// Title-bar ⊟ / ⊞: collapses everything while any section is open,
+// otherwise expands everything.
+// Sections that are hidden (no data yet) don't count.
+const anyOpenSection = () => sections.some(s => !s.classList.contains('hidden') && !s.classList.contains('collapsed'));
+function updateFoldAll() {
+  const anyOpen = anyOpenSection();
+  $('foldall').textContent = anyOpen ? '⊟' : '⊞';
+  $('foldall').title = anyOpen ? 'Collapse all' : 'Expand all';
+}
+
+for (const sec of sections) {
+  const name = sec.dataset.sec;
+  applyFold(sec, folded.includes(name));
+  sec.querySelector('.sec-head').addEventListener('click', () => {
     const isFolded = !sec.classList.contains('collapsed');
     folded = isFolded ? [...new Set([...folded, name])] : folded.filter(n => n !== name);
-    try { localStorage.setItem(FOLDED_KEY, JSON.stringify(folded)); } catch {}
-    apply(isFolded);
+    saveFolded();
+    applyFold(sec, isFolded);
+    updateFoldAll();
   });
 }
+$('foldall').addEventListener('click', () => {
+  const fold = anyOpenSection();
+  folded = fold ? sections.map(s => s.dataset.sec) : [];
+  saveFolded();
+  for (const sec of sections) applyFold(sec, fold);
+  updateFoldAll();
+});
+updateFoldAll();
 
 let lastBreakdown = [];
 function updateSummaries() {
+  updateFoldAll(); // a hidden section may have just appeared
   const txt = (id) => ($(id).textContent || '').trim();
   $('sum-ctx').textContent = txt('pct-ctx') === '—' ? '' : txt('pct-ctx');
   $('sum-limits').textContent = `5h ${txt('pct-5h')} · wk ${txt('pct-wk')}`;

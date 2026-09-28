@@ -87,6 +87,7 @@ Good to know:
 ## Controls
 
 - Drag by the title bar to move it.
+- **⊟ / ⊞**: collapse or expand every section at once.
 - **↻**: refresh now.
 - **–**: minimize the widget to the taskbar. Click it there, or the tray icon, to bring it back.
 - **×**: quit.
