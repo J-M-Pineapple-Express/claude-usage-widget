@@ -1,5 +1,14 @@
 # Changelog
 
+## v0.16.0 — 2026-09-27
+
+### Added (macOS)
+- **Show in Dock.** Claude Usage is a menu-bar app, so it had no Dock icon to
+  keep. Tick **Show in Dock** in the menu-bar icon's menu to give it one, then
+  right-click the icon → Options → **Keep in Dock**. Clicking the Dock icon
+  brings the widget back, and a minimized widget sits in the Dock like any
+  window. Off by default; the setting is remembered.
+
 ## v0.15.2 — 2026-09-27
 
 ### Fixed (macOS)

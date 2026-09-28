@@ -122,6 +122,31 @@ function setWidgetSize(id, scale) {
   }
 }
 
+// macOS: menu-bar only by default (LSUIElement), so there's no Dock icon to
+// keep. "Show in Dock" in the menu-bar menu adds one, which can then be kept
+// in the Dock (right-click → Options → Keep in Dock). Remembered in prefs.
+let showInDock = !!savedPrefs.showInDock;
+let startupDone = false;
+function applyDock() {
+  if (process.platform !== 'darwin' || !app.dock) return;
+  if (showInDock) { app.dock.show(); return; }
+  const wasVisible = widgetWin && !widgetWin.isDestroyed() && widgetWin.isVisible();
+  app.dock.hide();
+  // Hiding the Dock icon hides the app's windows too; put the widget back.
+  if (wasVisible) setTimeout(() => { if (widgetWin && !widgetWin.isDestroyed()) widgetWin.show(); }, 100);
+}
+function setShowInDock(on) {
+  showInDock = !!on;
+  try { fs.writeFileSync(prefsFile, JSON.stringify({ ...loadPrefs(), showInDock })); } catch {}
+  applyDock();
+}
+// Clicking the Dock icon shows the widget (or the sign-in window).
+app.on('activate', () => {
+  if (!startupDone) return;
+  if (loginWin && !loginWin.isDestroyed()) { loginWin.show(); loginWin.focus(); }
+  else createWidget();
+});
+
 // macOS green button: zoom to Extra large and back to the size you had.
 let zoomReturn = null;
 function toggleZoom() {
@@ -1557,6 +1582,9 @@ function createTray() {
       { label: 'Size', submenu: SIZES.map(z => ({
           id: `size-${z.id}`, label: z.label, type: 'radio', checked: z === widgetSize, click: () => setWidgetSize(z.id),
         })) },
+      ...(process.platform === 'darwin' ? [
+        { label: 'Show in Dock', type: 'checkbox', checked: showInDock, click: (item) => setShowInDock(item.checked) },
+      ] : []),
       ...(AUTO_CONTINUE_SUPPORTED ? [
         { type: 'separator' },
         {
@@ -1751,7 +1779,7 @@ function sniffUsagePage() {
 app.whenReady().then(async () => {
   if (!isPrimary) return; // quitting; the running copy was shown instead
   log(`app ready — v${APP_VERSION}`);
-  if (process.platform === 'darwin' && app.dock) app.dock.hide();
+  applyDock();
   // Keep the registered hook matching the setting and pointing at this
   // install's script (an update or reinstall can move it). No-op if correct.
   if (AUTO_CONTINUE_SUPPORTED) syncAutoContinueHook(loadAutoContinueConfig().enabled);
@@ -1765,6 +1793,7 @@ app.whenReady().then(async () => {
   } else {
     createLogin();
   }
+  startupDone = true;
 });
 
 // Chromium saves cookies on a timer; flush on quit so the sign-in always

@@ -91,6 +91,7 @@ Good to know:
 - **–**: minimize the widget to the taskbar. Click it there, or the tray icon, to bring it back.
 - **×**: quit.
 - Right-click the tray icon for **Show widget**, **Refresh now**, **Auto Continue**, **Sign out / switch account**, and **Quit**.
+- **macOS:** the widget has the native red/yellow/green buttons, and the app lives in the menu bar. To give it a Dock icon, tick **Show in Dock** in the menu-bar icon's menu, then right-click the Dock icon → Options → **Keep in Dock**.
 
 ---
 
