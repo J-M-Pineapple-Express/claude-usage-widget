@@ -173,9 +173,9 @@ function createWidget() {
   widgetWin.loadFile(path.join(__dirname, 'public', 'index.html'));
   widgetWin.webContents.on('did-finish-load', () => applyZoom());
   if (mac) {
-    // No Dock icon, so a minimized widget would have nothing to click to come
-    // back. Treat yellow as hide; the menu-bar icon shows it again.
-    widgetWin.on('minimize', () => { widgetWin.restore(); widgetWin.hide(); });
+    // Yellow is a plain minimize. The old restore()+hide() on 'minimize' let
+    // the restore animation finish after the hide, so the widget popped right
+    // back up (#4). The menu-bar icon's Show widget restores it.
     // Green zooms between your size and Extra large.
     widgetWin.on('maximize', () => { widgetWin.unmaximize(); toggleZoom(); });
     // Edge/corner drag scales the whole widget. Width sets the scale; a

@@ -1,5 +1,12 @@
 # Changelog
 
+## v0.15.2 — 2026-09-27
+
+### Fixed (macOS)
+- **The yellow button minimizes again.** The widget used to pop straight back
+  up after minimizing. It now stays minimized until you choose **Show widget**
+  from the menu-bar icon. Checked on a macOS 26 runner. (#4)
+
 ## v0.15.1 — 2026-09-24
 
 ### Fixed (Windows)
