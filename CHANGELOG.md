@@ -1,5 +1,18 @@
 # Changelog
 
+## v0.17.0 — 2026-09-27
+
+### Added
+- **Live gauge icon.** The tray / menu-bar icon is now a little gauge whose
+  needle points at your 5-hour usage: green on the left, red when you're near
+  the limit. When the number changes, the needle sweeps to it. Hover it for
+  the exact percentage.
+- **Windows:** the taskbar button shows the same live gauge.
+- **macOS:** with **Show in Dock** on, the Dock icon (and Cmd-Tab) shows it
+  too, on a dark tile.
+- **App icon.** A proper gauge icon for the installer, Start menu, desktop
+  shortcut, Finder and Launchpad, replacing Electron's default.
+
 ## v0.16.0 — 2026-09-27
 
 ### Added (macOS)

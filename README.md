@@ -90,6 +90,7 @@ Good to know:
 - **↻**: refresh now.
 - **–**: minimize the widget to the taskbar. Click it there, or the tray icon, to bring it back.
 - **×**: quit.
+- The tray / menu-bar icon is a gauge: its needle shows your 5-hour usage and sweeps when it changes. Hover it for the exact number.
 - Right-click the tray icon for **Show widget**, **Refresh now**, **Auto Continue**, **Sign out / switch account**, and **Quit**.
 - **macOS:** the widget has the native red/yellow/green buttons, and the app lives in the menu bar. To give it a Dock icon, tick **Show in Dock** in the menu-bar icon's menu, then right-click the Dock icon → Options → **Keep in Dock**.
 

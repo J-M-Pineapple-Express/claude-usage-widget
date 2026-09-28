@@ -129,7 +129,7 @@ let showInDock = !!savedPrefs.showInDock;
 let startupDone = false;
 function applyDock() {
   if (process.platform !== 'darwin' || !app.dock) return;
-  if (showInDock) { app.dock.show(); return; }
+  if (showInDock) { app.dock.show(); showGaugeFrame(gaugeAt); return; }
   const wasVisible = widgetWin && !widgetWin.isDestroyed() && widgetWin.isVisible();
   app.dock.hide();
   // Hiding the Dock icon hides the app's windows too; put the widget back.
@@ -223,6 +223,7 @@ function createWidget() {
     else if (input.key === '0') { stepWidgetSize(0); e.preventDefault(); }
   });
   widgetWin.on('closed', () => { widgetWin = null; });
+  showGaugeFrame(gaugeAt);
 }
 
 function createLogin() {
@@ -823,6 +824,7 @@ async function pollOnce() {
     reauthPrompted = false;
     log(`poll ok: 5h=${lastData.fiveHour.percent} weekly=${lastData.weekly.percent}`);
     if (widgetWin && !widgetWin.isDestroyed()) widgetWin.webContents.send('usage:update', lastData);
+    setTrayGauge(lastData.fiveHour.percent);
     checkAutoContinueQueue(lastData);
   } catch (e) {
     if (e instanceof HttpError && (e.status === 401 || e.status === 403)) {
@@ -1564,6 +1566,53 @@ function startContextPolling() {
   if (ctxTimer) clearInterval(ctxTimer);
   pushContext();
   ctxTimer = setInterval(pushContext, CONTEXT_POLL_MS);
+}
+
+// Live needle: points at 5-hour usage in the tray / menu bar, on the Windows
+// taskbar button, and on the macOS Dock icon (when Show in Dock is on).
+// public/gauge holds one frame per 5% for each (drawn by build/tray-icons.py);
+// on a change the needle steps through the frames in between, a ~half-second
+// sweep. Nothing runs while it's still.
+const GAUGE_STEP = 5;
+const gaugeFrames = new Map();
+let gaugeAt = null;      // frame currently shown (0-100), null = static icon
+let gaugeTimer = null;
+
+// kind: 'mac' (menu bar template), 'win' (tray), 'task' (taskbar), 'dock'
+function gaugeFrame(kind, pct) {
+  const key = `${kind}-${String(pct).padStart(3, '0')}`;
+  if (!gaugeFrames.has(key)) {
+    const img = nativeImage.createFromPath(path.join(__dirname, 'public', 'gauge', `${key}.png`));
+    if (kind === 'mac') img.setTemplateImage(true);
+    gaugeFrames.set(key, img);
+  }
+  return gaugeFrames.get(key);
+}
+
+function showGaugeFrame(pct) {
+  if (pct == null) return;
+  const mac = process.platform === 'darwin';
+  if (tray && !tray.isDestroyed()) tray.setImage(gaugeFrame(mac ? 'mac' : 'win', pct));
+  if (!mac && widgetWin && !widgetWin.isDestroyed()) widgetWin.setIcon(gaugeFrame('task', pct));
+  if (mac && showInDock && app.dock) app.dock.setIcon(gaugeFrame('dock', pct));
+}
+
+function setTrayGauge(percent) {
+  if (!tray || tray.isDestroyed() || percent == null) return;
+  const clamped = Math.max(0, Math.min(100, Number(percent)));
+  const target = Math.round(clamped / GAUGE_STEP) * GAUGE_STEP;
+  tray.setToolTip(`Claude Usage · 5-hour ${Math.round(clamped)}%`);
+  if (gaugeTimer) { clearInterval(gaugeTimer); gaugeTimer = null; }
+  // First reading: sweep up from zero, like a gauge waking up.
+  if (gaugeAt == null) gaugeAt = 0;
+  if (gaugeAt === target) { showGaugeFrame(target); return; }
+  const steps = Math.abs(target - gaugeAt) / GAUGE_STEP;
+  const dir = target > gaugeAt ? GAUGE_STEP : -GAUGE_STEP;
+  gaugeTimer = setInterval(() => {
+    gaugeAt += dir;
+    showGaugeFrame(gaugeAt);
+    if (gaugeAt === target) { clearInterval(gaugeTimer); gaugeTimer = null; }
+  }, Math.max(20, Math.min(60, 500 / steps)));
 }
 
 function createTray() {
